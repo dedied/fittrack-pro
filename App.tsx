@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout, { TabType } from './components/Layout';
 import ProgressChart from './components/ProgressChart';
@@ -16,7 +15,7 @@ const generateId = () => {
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-  const [timeFrame, setTimeFrame] = useState<TimeFrame>('daily');
+  const [totalsTimeFrame, setTotalsTimeFrame] = useState<TimeFrame>('weekly');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // PWA Installation State
@@ -64,7 +63,6 @@ const App: React.FC = () => {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
-      // Fixed: corrected typo in event listener removal name from appinstalledHandler to appInstalledHandler
       window.removeEventListener('appinstalled', appInstalledHandler);
     };
   }, []);
@@ -99,7 +97,7 @@ const App: React.FC = () => {
         if (log.type !== ex.id) return false;
         const logDate = new Date(log.date);
         
-        switch (timeFrame) {
+        switch (totalsTimeFrame) {
           case 'daily':
             return logDate.toDateString() === now.toDateString();
           case 'weekly':
@@ -121,10 +119,9 @@ const App: React.FC = () => {
         : 0;
       return { ...ex, totalReps, maxWeightPeriod };
     });
-  }, [logs, timeFrame]);
+  }, [logs, totalsTimeFrame]);
 
   const handleAddLog = (e: React.MouseEvent) => {
-    // Stop propagation to prevent any potential menu interference
     e.stopPropagation();
     
     const repsNum = parseInt(newEntry.reps);
@@ -244,7 +241,7 @@ const App: React.FC = () => {
       {activeTab === 'dashboard' && (
         <div className="space-y-6 animate-in fade-in duration-500">
           <section>
-            <ProgressChart logs={logs} timeFrame={timeFrame} setTimeFrame={setTimeFrame} />
+            <ProgressChart logs={logs} />
           </section>
 
           <section className="space-y-3">
@@ -277,7 +274,25 @@ const App: React.FC = () => {
           </section>
 
           <section className="space-y-3">
-            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">Period Totals</h2>
+            <div className="flex items-center justify-between ml-1">
+              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Period Totals</h2>
+              {/* Local Timeframe Filter for Period Totals */}
+              <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">
+                {(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map((tf) => (
+                  <button
+                    key={`totals-filter-${tf}`}
+                    onClick={() => setTotalsTimeFrame(tf)}
+                    className={`px-2 py-1 text-[9px] font-bold uppercase rounded-lg transition-all ${
+                      totalsTimeFrame === tf 
+                        ? 'bg-white text-indigo-600 shadow-sm' 
+                        : 'text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    {tf === 'yearly' ? 'Y' : tf.charAt(0)}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-3 gap-3">
               {filteredStats.map(ex => (
                 <div key={`total-${ex.id}`} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center">
@@ -428,7 +443,7 @@ const App: React.FC = () => {
           </div>
           
           <div className="text-center opacity-30">
-            <p className="text-[10px] uppercase font-black tracking-widest text-slate-500">FitTrack Pro v1.0.4</p>
+            <p className="text-[10px] uppercase font-black tracking-widest text-slate-500">FitTrack Pro v1.0.6</p>
           </div>
         </div>
       )}

@@ -7,12 +7,11 @@ type MetricType = 'reps' | 'weight';
 
 interface ProgressChartProps {
   logs: WorkoutLog[];
-  timeFrame: TimeFrame;
-  setTimeFrame: (tf: TimeFrame) => void;
 }
 
-const ProgressChart: React.FC<ProgressChartProps> = ({ logs, timeFrame, setTimeFrame }) => {
+const ProgressChart: React.FC<ProgressChartProps> = ({ logs }) => {
   const [metric, setMetric] = useState<MetricType>('reps');
+  const [timeFrame, setTimeFrame] = useState<TimeFrame>('weekly');
 
   const chartData = useMemo(() => {
     if (logs.length === 0) return [];
@@ -53,7 +52,6 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs, timeFrame, setTimeF
         value = log.weight || 0;
       }
 
-      // For charts, we use MAX for weight per period to show peak performance
       if (metric === 'weight') {
         aggregated[sortKey][log.type] = Math.max(aggregated[sortKey][log.type] || 0, value);
       } else {
@@ -89,37 +87,41 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs, timeFrame, setTimeF
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-800 uppercase tracking-tight">Analytics</h3>
-          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/50 shadow-inner">
+          {/* Timeframe Filter for Chart */}
+          <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">
             {(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map((tf) => (
               <button
                 key={`chart-filter-${tf}`}
                 onClick={() => setTimeFrame(tf)}
-                className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all ${
+                className={`px-2 py-1 text-[9px] font-bold uppercase rounded-lg transition-all ${
                   timeFrame === tf 
-                    ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200/50' 
+                    ? 'bg-white text-indigo-600 shadow-sm' 
                     : 'text-slate-400 hover:text-slate-600'
                 }`}
               >
-                {tf.charAt(0)}
+                {tf === 'yearly' ? 'Y' : tf.charAt(0)}
               </button>
             ))}
           </div>
         </div>
-
-        <div className="flex bg-indigo-50/50 p-1 rounded-xl gap-1">
-          {(['reps', 'weight'] as MetricType[]).map((m) => (
-            <button
-              key={`metric-filter-${m}`}
-              onClick={() => setMetric(m)}
-              className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
-                metric === m 
-                  ? 'bg-indigo-600 text-white shadow-md' 
-                  : 'text-indigo-400 hover:text-indigo-600'
-              }`}
-            >
-              {m}
-            </button>
-          ))}
+        
+        <div className="flex items-center justify-end">
+          {/* Metric Filter */}
+          <div className="flex bg-indigo-50/50 p-1 rounded-xl gap-1 w-28">
+            {(['reps', 'weight'] as MetricType[]).map((m) => (
+              <button
+                key={`metric-filter-${m}`}
+                onClick={() => setMetric(m)}
+                className={`flex-1 py-1 text-[8px] font-black uppercase rounded-lg transition-all ${
+                  metric === m 
+                    ? 'bg-indigo-600 text-white shadow-md' 
+                    : 'text-indigo-400 hover:text-indigo-600'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
