@@ -13,6 +13,19 @@ Built with React, Vite, and Tailwind CSS, it offers a seamless native-like exper
 - **📱 PWA Support:** Installable on iOS and Android.
 - **💾 Data Control:** Export and import your workout logs via CSV.
 
+## 🔄 Sync Strategy
+
+FitTrack Pro uses an **Offline-First** approach with a "Cloud-Wins" conflict resolution strategy to ensure data integrity across devices.
+
+1.  **Local Storage:** The app always reads from and writes to the device's local storage for instant performance.
+2.  **Cloud Synchronization:** When online and authenticated, the app performs a sync:
+    - **Downloads** all logs from the database.
+    - **Uploads** any local logs that don't exist in the cloud (new entries).
+    - **Claims Ownership:** Any logs created while in "Guest Mode" are automatically assigned to the user upon login.
+3.  **Conflict Resolution:**
+    - If a specific log ID exists in both Local Storage and the Cloud, **the Cloud version is treated as the source of truth** and overwrites the local version.
+    - This prevents stale local data on one device from overwriting edits made on another device.
+
 ## Database Setup (Supabase)
 
 To enable cloud syncing, set up a Supabase project and run the following SQL query in the **SQL Editor** to create the necessary tables and security policies.
@@ -50,6 +63,4 @@ CREATE POLICY workouts_owner ON public.workouts
   FOR ALL
   USING (auth.uid() = owner_id)
   WITH CHECK (auth.uid() = owner_id);
-
-
 ```

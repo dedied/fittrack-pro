@@ -166,39 +166,48 @@ const App: React.FC = () => {
     if (!supabase || !user) return;
     setSyncStatus('syncing');
     try {
-      // Step 1: Fetch cloud data.
+      // 1. Fetch Cloud Data (Source of Truth for existing IDs)
       const { data: cloudLogs, error: fetchError } = await supabase.from('workouts').select('*');
       if (fetchError) throw fetchError;
+      
       const cloudMap = new Map((cloudLogs || []).map(l => [l.id, l]));
 
-      // Step 2: Prepare local data for upload and merge using a functional update to avoid race conditions.
+      // 2. Identify Local Data to Upload
+      //    - Items that are NOT in the cloud map (newly created offline)
+      //    - Items that don't have an owner_id yet (created as guest)
       let toUpload: WorkoutLog[] = [];
+      
       setLogs(currentLogs => {
-        // Identify logs to upload based on the fresh `currentLogs`
+        // Find logs that need uploading
         toUpload = currentLogs
           .filter(ll => !cloudMap.has(ll.id) || !ll.owner_id)
           .map(ll => ({ ...ll, owner_id: user.id }));
 
-        // Merge cloud logs with current local logs
-        let mergedLogs = [...currentLogs];
-        cloudLogs?.forEach(cl => {
-          if (!mergedLogs.find(l => l.id === cl.id)) {
-            mergedLogs.push(cl);
+        // 3. MERGE STRATEGY: Cloud Wins on Conflict
+        //    - Start with all Cloud Logs
+        //    - Add any Local Logs that were NOT found in Cloud (new items)
+        
+        const mergedMap = new Map<string, WorkoutLog>();
+        
+        // Add all Cloud logs first (they overwrite local if ID matches)
+        cloudLogs?.forEach(cl => mergedMap.set(cl.id, cl));
+
+        // Add Local logs that aren't in cloud yet
+        currentLogs.forEach(ll => {
+          if (!mergedMap.has(ll.id)) {
+            // This is a local-only item, keep it
+            // Ensure it has the owner_id attached if we are about to upload it
+            mergedMap.set(ll.id, { ...ll, owner_id: user.id });
           }
         });
 
-        // Final state combines everything
-        const finalLogs = mergedLogs.map(l => {
-          if (toUpload.find(u => u.id === l.id) || cloudMap.has(l.id)) {
-            return { ...l, owner_id: user.id };
-          }
-          return l;
-        });
-
-        return finalLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const finalLogs = Array.from(mergedMap.values())
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          
+        return finalLogs;
       });
 
-      // Step 3: Perform the upload outside the state setter.
+      // 4. Perform Upload
       if (toUpload.length > 0) {
         const { error: upsertError } = await supabase.from('workouts').upsert(toUpload);
         if (upsertError) throw upsertError;
