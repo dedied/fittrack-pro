@@ -1,9 +1,8 @@
 
-const CACHE_NAME = 'fittrack-v1.0.7';
+const CACHE_NAME = 'fittrack-v1.0.8';
 const ASSETS = [
-  './',
-  './index.html',
-  './manifest.json',
+  'index.html',
+  'manifest.json',
   'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
 ];
@@ -12,7 +11,8 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
+      // Cache with 'reload' to bypass potentially broken local cache during update
+      return cache.addAll(ASSETS.map(url => new Request(url, {cache: 'reload'})));
     })
   );
 });
@@ -28,20 +28,36 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // For navigation requests (loading the app), try the network but fall back to cached index.html
-  if (event.request.mode === 'navigate') {
+  const { request } = event;
+
+  // For navigation requests (loading the app entry point)
+  if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => {
-        return caches.match('./index.html') || caches.match('./');
-      })
+      fetch(request)
+        .then((response) => {
+          // If network response is okay, use it
+          if (response.ok) return response;
+          // If GitHub Pages returns a 404, fallback to cached index.html shell
+          return caches.match('index.html');
+        })
+        .catch(() => {
+          // Offline fallback
+          return caches.match('index.html');
+        })
     );
     return;
   }
 
-  // For all other assets, use Cache-First strategy
+  // Standard asset handling
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
+    caches.match(request).then((cachedResponse) => {
+      if (cachedResponse) return cachedResponse;
+      
+      return fetch(request).catch(() => {
+        // Fallback for missing assets to avoid breakages
+        if (request.destination === 'image') return null;
+        return caches.match('index.html');
+      });
     })
   );
 });
