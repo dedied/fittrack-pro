@@ -6,6 +6,14 @@ import { WorkoutLog, EXERCISES, ExerciseType } from './types';
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
+// Robust unique ID generator for mobile compatibility
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [timeFrame, setTimeFrame] = useState<TimeFrame>('daily');
@@ -121,7 +129,7 @@ const App: React.FC = () => {
     const weightNum = parseFloat(newEntry.weight);
 
     const log: WorkoutLog = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       date: new Date().toISOString(),
       type: newEntry.type,
       reps: repsNum,
@@ -197,7 +205,7 @@ const App: React.FC = () => {
 
           if (!isNaN(dateObj.getTime()) && !isNaN(reps)) {
             newLogs.push({ 
-              id: id || crypto.randomUUID(), 
+              id: id || generateId(), 
               date: dateObj.toISOString(), 
               type: type as ExerciseType, 
               reps, 
