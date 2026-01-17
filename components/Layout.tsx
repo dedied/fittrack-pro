@@ -11,7 +11,7 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
   return (
-    <div className="min-h-screen pb-24 flex flex-col bg-slate-50">
+    <div className="min-h-screen pb-44 flex flex-col bg-slate-50">
       <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
         <h1 className="text-xl font-bold text-slate-800 tracking-tight text-center">FitTrack Pro</h1>
       </header>

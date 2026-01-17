@@ -307,10 +307,18 @@ const App: React.FC = () => {
             ))}
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <input type="number" inputMode="numeric" value={newEntry.reps} onChange={(e) => setNewEntry({ ...newEntry, reps: e.target.value })} placeholder="Reps" className="w-full text-2xl font-bold text-center p-5 bg-slate-100 rounded-2xl outline-none" />
-            <input type="number" inputMode="decimal" value={newEntry.weight} onChange={(e) => setNewEntry({ ...newEntry, weight: e.target.value })} placeholder="kg" disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} className="w-full text-2xl font-bold text-center p-5 bg-slate-100 rounded-2xl outline-none disabled:opacity-30" />
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Reps</label>
+              <input type="number" inputMode="numeric" value={newEntry.reps} onChange={(e) => setNewEntry({ ...newEntry, reps: e.target.value })} placeholder="0" className="w-full text-2xl font-bold text-center p-5 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-600/20" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Weight (kg)</label>
+              <input type="number" inputMode="decimal" value={newEntry.weight} onChange={(e) => setNewEntry({ ...newEntry, weight: e.target.value })} placeholder="0" disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} className="w-full text-2xl font-bold text-center p-5 bg-slate-100 rounded-2xl outline-none disabled:opacity-30 focus:ring-2 focus:ring-indigo-600/20" />
+            </div>
           </div>
-          <button onClick={handleAddLog} disabled={!newEntry.reps} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-bold text-lg shadow-lg disabled:opacity-50">Log Workout</button>
+          <div className="pb-10">
+            <button onClick={handleAddLog} disabled={!newEntry.reps} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-bold text-lg shadow-lg active:scale-95 transition-transform disabled:opacity-50">Log Workout</button>
+          </div>
         </div>
       )}
 
@@ -365,7 +373,7 @@ const App: React.FC = () => {
           </div>
           
           <p className="text-center text-[10px] uppercase font-bold text-slate-300 tracking-widest">
-            {isInstalled ? 'App Mode' : 'Browser Mode'} • v1.0.1
+            {isInstalled ? 'App Mode' : 'Browser Mode'} • v1.0.2
           </p>
         </div>
       )}
