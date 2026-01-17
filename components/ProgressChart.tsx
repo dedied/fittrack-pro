@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { WorkoutLog, EXERCISES } from '../types';
@@ -187,7 +188,7 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs }) => {
 
       <div className="w-full relative" style={{ height: '300px' }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             <XAxis 
               dataKey="timestamp" 
@@ -205,7 +206,7 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs }) => {
               axisLine={false} 
               tickLine={false} 
               tick={{ fontSize: 10, fill: '#94a3b8' }} 
-              width={30}
+              width={35}
             />
             <Tooltip 
               contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '12px' }}

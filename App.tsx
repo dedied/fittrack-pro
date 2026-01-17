@@ -25,6 +25,10 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [totalsTimeFrame, setTotalsTimeFrame] = useState<TimeFrame>('weekly');
   const [showToast, setShowToast] = useState(false);
+  
+  // History Drill Down State
+  const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [pinError, setPinError] = useState<string | null>(null);
@@ -70,6 +74,7 @@ const App: React.FC = () => {
         if (await secureStore.isPinSet()) {
           setAppState('locked');
         } else {
+          // No PIN set, allow default access if session exists
           const { data: { session } } = await client.auth.getSession();
           if (session?.user) {
             await resolveProfileForUser(client, session.user.id, session);
@@ -138,26 +143,25 @@ const App: React.FC = () => {
 
   useEffect(() => localStorage.setItem('fit_logs', JSON.stringify(logs)), [logs]);
 
-  // --- New PIN and Auth Handlers ---
+  // --- PIN and Auth Handlers ---
 
   const handlePinEnter = async (pin: string) => {
     if (pinAttempts <= 0) return;
     setPinError(null);
+    
+    // Check if the pin is correct by trying to decrypt session
     const sessionData = await secureStore.get(pin);
+    
     if (sessionData && supabase) {
-      // If we are confirming for biometrics, we don't need to set session again, just enable bio
-      if (appState === 'confirmingPinForBio') {
-        const success = await secureStore.enableBiometrics(pin);
-        if (success) {
-          setHasBiometrics(true);
-          setAppState('unlocked');
-          alert("Biometrics Enabled!");
-        } else {
-          setPinError("Biometric setup failed.");
-        }
-        return;
+      // If we are just enabling security (creating pin), enable bio now
+      if (appState === 'creatingPin') {
+         // This state is reached via handlePinCreate's callback loop if we used the same component logic, 
+         // but we handle handlePinCreate separately below. 
+         // This block handles specific re-auth scenarios if needed.
+         return;
       }
 
+      // Standard Login
       const { error } = await supabase.auth.setSession(sessionData as any);
       if (error) {
         setPinError("Invalid session. Please log in again.");
@@ -181,26 +185,42 @@ const App: React.FC = () => {
     }
   };
 
-  const handleToggleBiometrics = async () => {
-    if (hasBiometrics) {
-      if (window.confirm("Disable biometric unlock?")) {
-        await secureStore.disableBiometrics();
-        setHasBiometrics(false);
-      }
-    } else {
-      setPinError(null);
-      setAppState('confirmingPinForBio');
+  const handleEnableSecurity = () => {
+    setAppState('creatingPin');
+  };
+
+  const handleDisableSecurity = async () => {
+    if (window.confirm("Disable App Lock & Biometrics? Your app will be accessible without a PIN.")) {
+      await secureStore.clear();
+      setHasBiometrics(false);
     }
   };
 
+  // Called when user finishes creating a PIN in settings
   const handlePinCreate = async (pin: string) => {
     if (!supabase) return;
     const { data: { session } } = await supabase.auth.getSession();
+    
     if (session) {
+      // 1. Save session encrypted with PIN
       await secureStore.set(pin, session);
+      
+      // 2. Immediately attempt to enable biometrics
+      try {
+        const bioSuccess = await secureStore.enableBiometrics(pin);
+        if (bioSuccess) {
+          setHasBiometrics(true);
+          alert("App Lock & Biometrics Enabled!");
+        } else {
+          alert("PIN set, but Biometrics could not be enabled. You can use the PIN to unlock.");
+          setHasBiometrics(false);
+        }
+      } catch (e) {
+        console.error(e);
+        alert("PIN set. Biometrics failed.");
+      }
       setAppState('unlocked');
     } else {
-      // Should not happen if user just logged in
       alert("Session not found. Please log in again.");
       setAppState('onboarding');
     }
@@ -263,12 +283,13 @@ const App: React.FC = () => {
       }
       setProfileId(cleanId);
       setUser(session.user);
-      setAppState('creatingPin'); // <-- Key Change: Move to PIN creation
+      // Skip PIN creation by default, go straight to unlocked
+      setAppState('unlocked');
     } catch (err: any) { alert("Setup failed: " + err.message); }
   };
 
   const handleLogout = async () => {
-    if (window.confirm("Log out and disable Quick Unlock for this device?")) {
+    if (window.confirm("Log out?")) {
       await secureStore.clear();
       if (supabase) await supabase.auth.signOut();
       setProfileId(null); setUser(null); setSyncStatus('unconfigured');
@@ -290,18 +311,13 @@ const App: React.FC = () => {
       return;
     }
     const headers = ["Date", "Type", "Reps", "Weight (kg)"];
-    // Wrap date in quotes to handle commas in locale string
     const rows = logs.map(log => [
       `"${new Date(log.date).toLocaleString()}"`,
       log.type,
       log.reps,
       log.weight || ''
     ]);
-    
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(','), ...rows.map(r => r.join(','))].join("\n");
-    
-    // Create download link
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -317,7 +333,6 @@ const App: React.FC = () => {
       const text = event.target?.result as string; if (!text) return; const newLogs: WorkoutLog[] = [];
       text.split('\n').forEach((line, index) => {
         if (!line.trim() || (index === 0 && (line.toLowerCase().includes('date')))) return;
-        // Basic parsing - assumes no commas in values or quotes
         const [dateStr, typeStr, repsStr, weightStr] = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
         if (dateStr && typeStr && repsStr) {
           newLogs.push({ id: generateId(), date: new Date(dateStr).toISOString(), type: typeStr as ExerciseType, reps: parseInt(repsStr) || 0, weight: weightStr ? parseFloat(weightStr) : undefined, user_id: profileId || undefined });
@@ -341,6 +356,22 @@ const App: React.FC = () => {
         default: return logDate.getFullYear() === now.getFullYear();
       }}).reduce((acc, curr) => acc + curr.reps, 0)}));
   }, [logs, totalsTimeFrame]);
+
+  // Derived state for the history view
+  const historyLogs = useMemo(() => {
+    if (!viewingHistory) return [];
+    const now = new Date();
+    return logs.filter(log => {
+      if (log.type !== viewingHistory) return false;
+      const logDate = new Date(log.date);
+      switch (totalsTimeFrame) {
+        case 'daily': return logDate.toDateString() === now.toDateString();
+        case 'weekly': const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7); return logDate >= weekAgo;
+        case 'monthly': return logDate.getMonth() === now.getMonth() && logDate.getFullYear() === now.getFullYear();
+        default: return logDate.getFullYear() === now.getFullYear();
+      }
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [logs, viewingHistory, totalsTimeFrame]);
 
   const handleAddLog = async (e: React.MouseEvent) => {
     e.stopPropagation(); const repsNum = parseInt(newEntry.reps); if (isNaN(repsNum) || repsNum <= 0) return;
@@ -380,7 +411,7 @@ const App: React.FC = () => {
   }
 
   if (appState === 'creatingPin') {
-    return <PinLockScreen isCreating={true} onPinCreate={handlePinCreate} onReset={handleResetPin} error={null} />;
+    return <PinLockScreen isCreating={true} onPinCreate={handlePinCreate} onReset={() => setAppState('unlocked')} error={null} />;
   }
 
   if (appState === 'onboarding') {
@@ -399,6 +430,44 @@ const App: React.FC = () => {
     );
   }
 
+  // --- Main Render ---
+
+  // History Detail View
+  if (activeTab === 'dashboard' && viewingHistory) {
+    const exerciseDef = EXERCISES.find(e => e.id === viewingHistory);
+    return (
+      <div className="h-[100dvh] w-full flex flex-col bg-slate-50 relative">
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0 flex items-center gap-4 z-30 shadow-sm sticky top-0">
+          <button onClick={() => setViewingHistory(null)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <div>
+            <h1 className="text-xl font-black text-slate-800 tracking-tight">{exerciseDef?.label} History</h1>
+            <p className="text-[10px] text-slate-400 font-bold uppercase">{totalsTimeFrame} Logs</p>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+          {historyLogs.length === 0 ? (
+            <div className="text-center text-slate-400 py-10">No logs found for this period.</div>
+          ) : (
+            historyLogs.map(log => (
+              <div key={log.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+                <div>
+                   <p className="text-sm font-bold text-slate-800">{new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                   <p className="text-[10px] text-slate-400 font-bold">{new Date(log.date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+                <div className="text-right">
+                   <p className="text-lg font-black text-indigo-600">{log.reps} <span className="text-[10px] text-slate-400 font-bold uppercase">Reps</span></p>
+                   {log.weight && <p className="text-xs font-bold text-emerald-600">{log.weight}kg</p>}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus}>
       {activeTab === 'dashboard' && (
@@ -409,7 +478,17 @@ const App: React.FC = () => {
               <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Period Totals</h2>
               <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">{(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map(tf => (<button key={tf} onClick={() => setTotalsTimeFrame(tf)} className={`px-2 py-1 text-[9px] font-bold uppercase rounded-lg ${totalsTimeFrame === tf ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>{tf.charAt(0)}</button>))}</div>
             </div>
-            <div className="grid grid-cols-3 gap-3">{filteredStats.map(ex => (<div key={ex.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center"><div className="mb-2">{ex.icon}</div><span className="text-[10px] text-slate-400 font-bold uppercase text-center">{ex.label}</span><span className="text-xl font-bold text-slate-800">{ex.totalReps}</span></div>))}</div>
+            <div className="grid grid-cols-3 gap-3">{filteredStats.map(ex => (
+              <div 
+                key={ex.id} 
+                onClick={() => setViewingHistory(ex.id)}
+                className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center cursor-pointer active:scale-95 transition-transform hover:border-indigo-100"
+              >
+                <div className="mb-2">{ex.icon}</div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase text-center">{ex.label}</span>
+                <span className="text-xl font-bold text-slate-800">{ex.totalReps}</span>
+              </div>
+            ))}</div>
           </section>
           <section className="space-y-3">
             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">🏆 Personal Bests</h2>
@@ -452,19 +531,27 @@ const App: React.FC = () => {
 
           {/* Main Settings List */}
           <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
-            <button onClick={handleToggleBiometrics} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
+            <button onClick={hasBiometrics ? handleDisableSecurity : handleEnableSecurity} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasBiometrics ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
                 {hasBiometrics ? (
                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 ) : (
-                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 6" /><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" /><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" /><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" /><path d="M8.65 22c.21-.66.45-1.32.57-2" /><path d="M14 13.12c0 2.38 0 6.38-1 8.88" /><path d="M2 16h.01" /><path d="M21.8 16c.2-2 .131-5.354 0-6" /><path d="M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2" /></svg>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                 )}
               </div>
               <div className="text-left flex-1 font-bold">
-                {hasBiometrics ? "Disable Biometrics" : "Enable Biometrics"}
+                {hasBiometrics ? "Disable App Lock" : "Enable App Lock & Biometrics"}
               </div>
+              {!hasBiometrics && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>}
             </button>
-            <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div><div className="text-left flex-1 font-bold">Change PIN</div></button>
+            
+            {hasBiometrics && (
+              <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
+                 <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div>
+                 <div className="text-left flex-1 font-bold">Change PIN</div>
+              </button>
+            )}
+
             <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
             <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
             <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
