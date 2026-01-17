@@ -1,0 +1,18 @@
+
+{
+  "name": "FitTrack Pro",
+  "short_name": "FitTrack",
+  "description": "Elegant fitness tracking with AI coaching.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2964/2964514.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
