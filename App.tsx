@@ -17,6 +17,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [totalsTimeFrame, setTotalsTimeFrame] = useState<TimeFrame>('weekly');
   const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [showToast, setShowToast] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -130,9 +131,18 @@ const App: React.FC = () => {
       weight: !isNaN(weightNum) ? weightNum : undefined
     };
 
+    if ('vibrate' in navigator) {
+      navigator.vibrate(25);
+    }
+
     setLogs(prevLogs => [log, ...prevLogs]);
     setNewEntry({ type: newEntry.type, reps: '', weight: '' });
-    setActiveTab('dashboard');
+    
+    setShowToast(true);
+    setTimeout(() => {
+      setShowToast(false);
+      setActiveTab('dashboard');
+    }, 1500);
   };
 
   const clearAllData = () => {
@@ -197,6 +207,34 @@ const App: React.FC = () => {
       {activeTab === 'dashboard' && (
         <div className="space-y-6 animate-in fade-in duration-500">
           <section><ProgressChart logs={logs} /></section>
+
+          {/* Restored Period Totals Section */}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between ml-1">
+              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Period Totals</h2>
+              <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">
+                {(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map(tf => (
+                  <button 
+                    key={`totals-filter-${tf}`} 
+                    onClick={() => setTotalsTimeFrame(tf)} 
+                    className={`px-2 py-1 text-[9px] font-bold uppercase rounded-lg transition-all ${totalsTimeFrame === tf ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    {tf === 'yearly' ? 'Y' : tf.charAt(0)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {filteredStats.map(ex => (
+                <div key={`total-${ex.id}`} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center">
+                  <div className="mb-2">{ex.icon}</div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight text-center truncate w-full">{ex.label}</span>
+                  <span className="text-xl font-bold text-slate-800">{ex.totalReps}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          
           <section className="space-y-3">
             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">🏆 Personal Bests</h2>
             <div className="grid grid-cols-1 gap-3">
@@ -216,25 +254,6 @@ const App: React.FC = () => {
               ))}
             </div>
           </section>
-          <section className="space-y-3">
-            <div className="flex items-center justify-between ml-1">
-              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Period Totals</h2>
-              <div className="flex bg-slate-100 p-0.5 rounded-xl">
-                {(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map(tf => (
-                  <button key={tf} onClick={() => setTotalsTimeFrame(tf)} className={`px-2 py-1 text-[9px] font-bold uppercase rounded-lg transition-all ${totalsTimeFrame === tf ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>{tf.charAt(0)}</button>
-                ))}
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              {filteredStats.map(ex => (
-                <div key={`total-${ex.id}`} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center">
-                  <div className="mb-2">{ex.icon}</div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight text-center">{ex.label}</span>
-                  <span className="text-xl font-bold text-slate-800">{ex.totalReps}</span>
-                </div>
-              ))}
-            </div>
-          </section>
         </div>
       )}
 
@@ -243,7 +262,7 @@ const App: React.FC = () => {
           <div className="text-center"><h2 className="text-2xl font-bold text-slate-800 tracking-tight">Record Set</h2></div>
           <div className="space-y-2">
             {EXERCISES.map(ex => (
-              <button key={ex.id} onClick={() => setNewEntry({ ...newEntry, type: ex.id })} className={`flex items-center gap-4 p-4 rounded-2xl border-2 w-full transition-all ${newEntry.type === ex.id ? 'border-indigo-600 bg-indigo-50/50 shadow-sm' : 'border-slate-100 bg-white'}`}>
+              <button key={ex.id} onClick={() => setNewEntry({ ...newEntry, type: ex.id })} className={`flex items-center gap-4 p-4 rounded-2xl border-2 w-full transition-all active:scale-[0.98] ${newEntry.type === ex.id ? 'border-indigo-600 bg-indigo-50 shadow-sm' : 'border-slate-100 bg-white'}`}>
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10 shrink-0`}>{ex.icon}</div>
                 <div className="text-left flex-1 font-bold text-slate-800">{ex.label}</div>
               </button>
@@ -252,21 +271,23 @@ const App: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Reps</label>
-              <input type="number" inputMode="numeric" value={newEntry.reps} onChange={(e) => setNewEntry({ ...newEntry, reps: e.target.value })} placeholder="0" className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl" />
+              <input type="number" inputMode="numeric" value={newEntry.reps} onChange={(e) => setNewEntry({ ...newEntry, reps: e.target.value })} placeholder="0" className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl focus:border-indigo-600 outline-none transition-all" />
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Weight (kg)</label>
-              <input type="number" inputMode="decimal" value={newEntry.weight} onChange={(e) => setNewEntry({ ...newEntry, weight: e.target.value })} placeholder="0" disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl disabled:opacity-30" />
+              <input type="number" inputMode="decimal" value={newEntry.weight} onChange={(e) => setNewEntry({ ...newEntry, weight: e.target.value })} placeholder="0" disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl disabled:opacity-30 focus:border-indigo-600 outline-none transition-all" />
             </div>
           </div>
-          <button onClick={handleAddLog} disabled={!newEntry.reps || parseInt(newEntry.reps) <= 0} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg active:scale-95 disabled:opacity-50">SAVE SET</button>
+          <button onClick={handleAddLog} disabled={!newEntry.reps || parseInt(newEntry.reps) <= 0 || showToast} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg active:scale-95 disabled:opacity-50 transition-all">
+            {showToast ? 'SAVED! ✨' : 'SAVE SET'}
+          </button>
         </div>
       )}
 
       {activeTab === 'settings' && (
         <div className="space-y-6 animate-in fade-in duration-300">
           <header className="text-center"><h2 className="text-2xl font-bold text-slate-800">Settings</h2></header>
-          <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+          <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
             <button onClick={handleInstallClick} className={`w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 transition-all ${isInstalled ? 'text-emerald-600' : 'text-indigo-600'}`}>
               <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isInstalled ? 'bg-emerald-100' : 'bg-indigo-100'}`}>
                 {isInstalled ? <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
@@ -282,17 +303,25 @@ const App: React.FC = () => {
               <div className="text-left"><p className="font-bold">Import History</p><p className="text-[10px] text-slate-400 uppercase">Restore .CSV</p></div>
             </button>
             <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
-            <button onClick={clearAllData} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600">
+            <button onClick={clearAllData} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600 transition-colors">
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0 text-red-600"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></div>
               <div className="text-left"><p className="font-bold">Clear Data</p><p className="text-[10px] text-red-400 uppercase">Wipe all history</p></div>
             </button>
           </div>
+          <p className="text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">Version 1.2.2</p>
+        </div>
+      )}
+
+      {showToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-3 shadow-2xl toast-animate">
+          <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center text-[10px]">✓</div>
+          Workout Logged!
         </div>
       )}
 
       {showInstallGuide && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowInstallGuide(false)}>
-          <div className="bg-white w-full max-w-md rounded-[32px] p-8 space-y-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-start">
               <div><h3 className="text-2xl font-black text-slate-800">Install FitTrack</h3><p className="text-slate-500 text-sm">Add to home screen for offline use.</p></div>
               <button onClick={() => setShowInstallGuide(false)} className="bg-slate-100 p-2 rounded-full text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
