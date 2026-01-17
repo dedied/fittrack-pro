@@ -65,7 +65,6 @@ const App: React.FC = () => {
   const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinAttempts, setPinAttempts] = useState(MAX_PIN_ATTEMPTS);
@@ -727,6 +726,21 @@ const App: React.FC = () => {
 
   return (
     <>
+      {/* CSS hack to make the date input clickable everywhere on WebKit browsers */}
+      <style>{`
+        .date-picker-hack::-webkit-calendar-picker-indicator {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: 100%;
+          height: 100%;
+          color: transparent;
+          background: transparent;
+          cursor: pointer;
+        }
+      `}</style>
       <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus}>
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
@@ -785,21 +799,20 @@ const App: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="w-16"></div> {/* Spacer */}
               <h2 className="text-xl font-bold text-slate-800">Record Set</h2>
-              <button 
-                onClick={() => dateInputRef.current?.showPicker?.()} 
-                className="flex items-center gap-1.5 text-xs font-semibold bg-slate-100 text-slate-600 px-2 py-1.5 rounded-lg active:bg-slate-200"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                <span>{formatEntryDate(entryDate)}</span>
-              </button>
-              <input
-                type="datetime-local"
-                ref={dateInputRef}
-                onChange={handleDateChange}
-                className="sr-only"
-                aria-hidden="true"
-                value={toDateTimeLocal(entryDate)}
-              />
+              <div className="relative">
+                <button 
+                  className="flex items-center gap-1.5 text-xs font-semibold bg-slate-100 text-slate-600 px-2 py-1.5 rounded-lg active:bg-slate-200"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                  <span>{formatEntryDate(entryDate)}</span>
+                </button>
+                <input
+                  type="datetime-local"
+                  onChange={handleDateChange}
+                  value={toDateTimeLocal(entryDate)}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-picker-hack"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">{EXERCISES.map(ex => (<button key={ex.id} onClick={() => setNewEntry({ ...newEntry, type: ex.id })} className={`flex items-center gap-4 p-4 rounded-2xl border-2 w-full transition-all ${newEntry.type === ex.id ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 bg-white'}`}><div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div><div className="font-bold text-slate-800">{ex.label}</div></button>))}</div>
