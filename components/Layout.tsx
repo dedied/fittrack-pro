@@ -11,8 +11,8 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
   return (
     <div className="min-h-screen pb-24 flex flex-col">
-      <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10 shadow-sm text-center">
-        <h1 className="text-xl font-bold text-slate-800 tracking-tight">FitTrack Pro</h1>
+      <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
+        <h1 className="text-xl font-bold text-slate-800 tracking-tight text-center">FitTrack Pro</h1>
       </header>
       
       <main className="flex-1 max-w-lg mx-auto w-full p-4">
@@ -21,8 +21,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
 
       {/* Navigation Bar */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 h-20 flex items-center z-50 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] px-4">
-        {/* Left Tab - Dashboard */}
-        <div className="flex-1 flex justify-center">
+        {/* Left Side Group */}
+        <div className="flex flex-1 justify-center">
           <button 
             onClick={() => setActiveTab('dashboard')}
             className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'dashboard' ? 'text-indigo-600' : 'text-slate-400'}`}
@@ -32,7 +32,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
           </button>
         </div>
 
-        {/* Central Floating Button - Add */}
+        {/* Central Floating Button */}
         <div className="flex-none px-6">
           <button 
             onClick={() => setActiveTab('add')}
@@ -42,8 +42,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
           </button>
         </div>
 
-        {/* Right Tab - Settings */}
-        <div className="flex-1 flex justify-center">
+        {/* Right Side Group */}
+        <div className="flex flex-1 justify-center">
           <button 
             onClick={() => setActiveTab('settings')}
             className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'settings' ? 'text-indigo-600' : 'text-slate-400'}`}

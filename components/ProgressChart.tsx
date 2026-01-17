@@ -1,7 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { WorkoutLog, EXERCISES } from '../types';
+import { WorkoutLog, EXERCISES, ExerciseType } from '../types';
 import { TimeFrame } from '../App';
+
+type MetricType = 'reps' | 'weight';
 
 interface ProgressChartProps {
   logs: WorkoutLog[];
@@ -10,6 +12,8 @@ interface ProgressChartProps {
 }
 
 const ProgressChart: React.FC<ProgressChartProps> = ({ logs, timeFrame, setTimeFrame }) => {
+  const [metric, setMetric] = useState<MetricType>('reps');
+
   const chartData = useMemo(() => {
     if (logs.length === 0) return [];
 
@@ -41,18 +45,31 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs, timeFrame, setTimeF
       if (!aggregated[sortKey]) {
         aggregated[sortKey] = { label: dateKey, sortKey };
       }
-      aggregated[sortKey][log.type] = (aggregated[sortKey][log.type] || 0) + log.reps;
+
+      let value = 0;
+      if (metric === 'reps') {
+        value = log.reps;
+      } else if (metric === 'weight') {
+        value = log.weight || 0;
+      }
+
+      // For charts, we use MAX for weight per period to show peak performance
+      if (metric === 'weight') {
+        aggregated[sortKey][log.type] = Math.max(aggregated[sortKey][log.type] || 0, value);
+      } else {
+        aggregated[sortKey][log.type] = (aggregated[sortKey][log.type] || 0) + value;
+      }
     });
 
     return Object.values(aggregated)
       .sort((a: any, b: any) => a.sortKey.localeCompare(b.sortKey))
       .slice(-12);
-  }, [logs, timeFrame]);
+  }, [logs, timeFrame, metric]);
 
   const getLineColor = (id: string) => {
     switch (id) {
-      case 'pushups': return '#15803d'; // Dark Green (Green 700)
-      case 'situps': return '#7e22ce'; // Dark Purple
+      case 'pushups': return '#15803d'; // Green 700
+      case 'situps': return '#7e22ce'; // Purple
       case 'bicep_curls': return '#ef4444'; // Red
       default: return '#cbd5e1';
     }
@@ -69,20 +86,38 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs, timeFrame, setTimeF
 
   return (
     <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-tight">Trends</h3>
-        <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/50 shadow-inner">
-          {(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map((tf) => (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-tight">Analytics</h3>
+          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/50 shadow-inner">
+            {(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map((tf) => (
+              <button
+                key={`chart-filter-${tf}`}
+                onClick={() => setTimeFrame(tf)}
+                className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all ${
+                  timeFrame === tf 
+                    ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200/50' 
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                {tf.charAt(0)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex bg-indigo-50/50 p-1 rounded-xl gap-1">
+          {(['reps', 'weight'] as MetricType[]).map((m) => (
             <button
-              key={`chart-filter-${tf}`}
-              onClick={() => setTimeFrame(tf)}
-              className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all ${
-                timeFrame === tf 
-                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200/50' 
-                  : 'text-slate-400 hover:text-slate-600'
+              key={`metric-filter-${m}`}
+              onClick={() => setMetric(m)}
+              className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
+                metric === m 
+                  ? 'bg-indigo-600 text-white shadow-md' 
+                  : 'text-indigo-400 hover:text-indigo-600'
               }`}
             >
-              {tf.charAt(0)}
+              {m}
             </button>
           ))}
         </div>

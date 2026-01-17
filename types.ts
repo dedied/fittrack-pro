@@ -7,6 +7,7 @@ export interface WorkoutLog {
   date: string; // ISO string
   type: ExerciseType;
   reps: number;
+  weight?: number; // Optional weight in kg/lbs
 }
 
 export interface ExerciseDefinition {
@@ -15,6 +16,7 @@ export interface ExerciseDefinition {
   icon: React.ReactNode;
   color: string;
   targetMuscle: string;
+  isWeighted: boolean;
 }
 
 export const EXERCISES: ExerciseDefinition[] = [
@@ -23,20 +25,23 @@ export const EXERCISES: ExerciseDefinition[] = [
     label: 'Pushups', 
     icon: React.createElement('span', { className: 'text-2xl', role: 'img', 'aria-label': 'pushups' }, '⚡'), 
     color: 'bg-green-700', 
-    targetMuscle: 'Chest & Triceps' 
+    targetMuscle: 'Chest & Triceps',
+    isWeighted: false
   },
   { 
     id: 'situps', 
     label: 'Situps', 
     icon: React.createElement('span', { className: 'text-2xl', role: 'img', 'aria-label': 'situps' }, '🎯'), 
     color: 'bg-purple-700', 
-    targetMuscle: 'Core' 
+    targetMuscle: 'Core',
+    isWeighted: false
   },
   { 
     id: 'bicep_curls', 
     label: 'Bicep Curls', 
     icon: React.createElement('span', { className: 'text-2xl', role: 'img', 'aria-label': 'bicep curls' }, '💪'), 
     color: 'bg-red-500', 
-    targetMuscle: 'Arms' 
+    targetMuscle: 'Arms',
+    isWeighted: true
   },
 ];
