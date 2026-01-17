@@ -16,6 +16,7 @@
     body {
       font-family: 'Inter', sans-serif;
       -webkit-tap-highlight-color: transparent;
+      overflow-x: hidden;
     }
     .custom-scrollbar::-webkit-scrollbar {
       width: 4px;
@@ -34,10 +35,10 @@
     "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.37.0",
     "recharts": "https://esm.sh/recharts@^3.6.0",
     "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "@google/genai": "https://esm.sh/@google/genai@^1.37.0"
   }
 }
 </script>
@@ -45,7 +46,6 @@
 <body class="bg-slate-50 text-slate-900">
   <div id="root"></div>
   
-  <!-- Vite Entry Point -->
   <script type="module" src="./index.tsx"></script>
   
   <script>

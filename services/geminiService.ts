@@ -3,6 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutLog } from "../types";
 
 export const getAIInsights = async (logs: WorkoutLog[]): Promise<string> => {
+  // Always initialize a fresh GoogleGenAI instance before the request to use current process.env.API_KEY
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const recentLogs = logs.slice(-20); // Last 20 logs for context
@@ -20,11 +21,14 @@ export const getAIInsights = async (logs: WorkoutLog[]): Promise<string> => {
         ${dataSummary || "No data yet."}
       `,
       config: {
-        maxOutputTokens: 150,
+        // Guideline: When maxOutputTokens is set, thinkingBudget must be specified to reserve response tokens
+        maxOutputTokens: 200,
+        thinkingConfig: { thinkingBudget: 100 },
         temperature: 0.7,
       }
     });
 
+    // Directly access the text property as a string (not a method)
     return response.text || "Keep pushing! Every rep counts towards your goal.";
   } catch (error) {
     console.error("Gemini Insight Error:", error);

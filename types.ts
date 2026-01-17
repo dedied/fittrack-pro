@@ -1,3 +1,4 @@
+import React from 'react';
 
 export type ExerciseType = 'pushups' | 'situps' | 'bicep_curls';
 
@@ -11,13 +12,31 @@ export interface WorkoutLog {
 export interface ExerciseDefinition {
   id: ExerciseType;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   color: string;
   targetMuscle: string;
 }
 
 export const EXERCISES: ExerciseDefinition[] = [
-  { id: 'pushups', label: 'Pushups', icon: '💪', color: 'bg-blue-500', targetMuscle: 'Chest & Triceps' },
-  { id: 'situps', label: 'Situps', icon: '🧘', color: 'bg-indigo-500', targetMuscle: 'Core' },
-  { id: 'bicep_curls', label: 'Bicep Curls', icon: '🏋️‍♂️', color: 'bg-rose-500', targetMuscle: 'Arms' },
+  { 
+    id: 'pushups', 
+    label: 'Pushups', 
+    icon: React.createElement('span', { className: 'text-2xl', role: 'img', 'aria-label': 'pushups' }, '⚡'), 
+    color: 'bg-green-700', 
+    targetMuscle: 'Chest & Triceps' 
+  },
+  { 
+    id: 'situps', 
+    label: 'Situps', 
+    icon: React.createElement('span', { className: 'text-2xl', role: 'img', 'aria-label': 'situps' }, '🎯'), 
+    color: 'bg-purple-700', 
+    targetMuscle: 'Core' 
+  },
+  { 
+    id: 'bicep_curls', 
+    label: 'Bicep Curls', 
+    icon: React.createElement('span', { className: 'text-2xl', role: 'img', 'aria-label': 'bicep curls' }, '💪'), 
+    color: 'bg-red-500', 
+    targetMuscle: 'Arms' 
+  },
 ];

@@ -1,7 +1,5 @@
 {
   "name": "FitTrack Pro",
-  "description": "A simple and elegant fitness tracker for monitoring your pushups, situps, and bicep curls progress with AI-powered coaching.",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "description": "A simple and elegant fitness tracker for monitoring your pushups, situps, and bicep curls progress.",
+  "requestFramePermissions": []
 }

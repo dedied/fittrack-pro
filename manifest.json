@@ -2,7 +2,7 @@
 {
   "name": "FitTrack Pro",
   "short_name": "FitTrack",
-  "description": "Elegant fitness tracking with AI coaching.",
+  "description": "Elegant and simple fitness tracking for your workouts.",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#f8fafc",
