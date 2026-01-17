@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout, { TabType } from './components/Layout';
 import ProgressChart from './components/ProgressChart';
@@ -136,18 +137,25 @@ const App: React.FC = () => {
     if (window.confirm("Delete all workout history? This cannot be undone.")) {
       setLogs([]);
       localStorage.removeItem('fit_logs');
+      alert("All data has been wiped.");
       setActiveTab('dashboard');
     }
   };
 
   const exportToCSV = () => {
-    if (logs.length === 0) return;
-    const headers = ['Date', 'Time', 'Exercise', 'Reps', 'Weight'];
-    const rows = logs.map(log => {
-      const d = new Date(log.date);
-      const exerciseLabel = EXERCISES.find(e => e.id === log.type)?.label || log.type;
-      return [d.toLocaleDateString(), d.toLocaleTimeString(), exerciseLabel, log.reps, log.weight || 0];
-    });
+    if (logs.length === 0) {
+      alert("No data to export.");
+      return;
+    }
+    const headers = ['ID', 'Date_ISO', 'Exercise', 'Reps', 'Weight'];
+    const rows = logs.map(log => [
+      log.id,
+      log.date,
+      log.type,
+      log.reps,
+      log.weight || 0
+    ]);
+    
     const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -155,6 +163,7 @@ const App: React.FC = () => {
     link.href = url;
     link.download = `fittrack_export_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -162,31 +171,59 @@ const App: React.FC = () => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
-      const content = e.target?.result as string;
-      if (!content) return;
-      const lines = content.split('\n');
-      const newLogs: WorkoutLog[] = [];
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        const parts = line.split(',');
-        if (parts.length < 4) continue;
-        const [dateStr, timeStr, exerciseLabel, repsStr, weightStr] = parts;
-        const reps = parseInt(repsStr);
-        const weight = weightStr ? parseFloat(weightStr) : undefined;
-        const exercise = EXERCISES.find(ex => ex.label === exerciseLabel);
-        const type = exercise ? exercise.id : 'pushups';
-        const dateObj = new Date(`${dateStr} ${timeStr}`);
-        if (!isNaN(dateObj.getTime()) && !isNaN(reps)) {
-          newLogs.push({ id: crypto.randomUUID(), date: dateObj.toISOString(), type, reps, weight });
+      try {
+        const content = e.target?.result as string;
+        if (!content) return;
+        
+        const lines = content.split('\n');
+        const newLogs: WorkoutLog[] = [];
+        let skipped = 0;
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          
+          const parts = line.split(',').map(p => p.trim());
+          if (parts.length < 4) {
+            skipped++;
+            continue;
+          }
+
+          const [id, dateIso, type, repsStr, weightStr] = parts;
+          
+          const reps = parseInt(repsStr);
+          const weight = weightStr ? parseFloat(weightStr) : undefined;
+          const dateObj = new Date(dateIso);
+
+          if (!isNaN(dateObj.getTime()) && !isNaN(reps)) {
+            newLogs.push({ 
+              id: id || crypto.randomUUID(), 
+              date: dateObj.toISOString(), 
+              type: type as ExerciseType, 
+              reps, 
+              weight: weight !== 0 ? weight : undefined 
+            });
+          } else {
+            skipped++;
+          }
         }
-      }
-      if (newLogs.length > 0) {
-        setLogs(prev => [...newLogs, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+
+        if (newLogs.length > 0) {
+          setLogs(prev => {
+            const combined = [...newLogs, ...prev];
+            const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
+            return unique.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          });
+          alert(`Import complete! Successfully imported ${newLogs.length} records.${skipped > 0 ? ` (Skipped ${skipped} invalid rows)` : ''}`);
+        } else {
+          alert("Could not find any valid workout data in the file.");
+        }
+      } catch (err) {
+        console.error("Import error:", err);
+        alert("An error occurred while parsing the CSV file.");
       }
     };
     reader.readAsText(file);
-    // Clear the input so the same file can be selected again
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -320,7 +357,7 @@ const App: React.FC = () => {
           </div>
           
           <p className="text-center text-[10px] uppercase font-bold text-slate-300 tracking-widest">
-            {isInstalled ? 'App Mode' : 'Browser Mode'} • v1.0.0
+            {isInstalled ? 'App Mode' : 'Browser Mode'} • v1.0.1
           </p>
         </div>
       )}
