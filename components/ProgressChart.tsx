@@ -203,7 +203,7 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs }) => {
           </div>
         </div>
 
-        {/* Interactive Legend - Moved to top, removed border */}
+        {/* Interactive Legend - Lighter font */}
         <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
           {EXERCISES.map(ex => {
             const isActive = activeSeries === null || activeSeries === ex.id;
@@ -214,7 +214,7 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs }) => {
               <button
                 key={ex.id}
                 onClick={() => setActiveSeries(prev => prev === ex.id ? null : ex.id)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium uppercase transition-all ${
                   isActive ? 'scale-100' : 'scale-95 opacity-40 grayscale'
                 }`}
                 style={{
