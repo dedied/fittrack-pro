@@ -289,11 +289,17 @@ const App: React.FC = () => {
       alert("No data to export!");
       return;
     }
-    const headers = "Date,Type,Reps,Weight (kg)";
-    const rows = logs.map(log => 
-      `${new Date(log.date).toLocaleString()},${log.type},${log.reps},${log.weight || ''}`
-    );
-    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].join("\n");
+    const headers = ["Date", "Type", "Reps", "Weight (kg)"];
+    // Wrap date in quotes to handle commas in locale string
+    const rows = logs.map(log => [
+      `"${new Date(log.date).toLocaleString()}"`,
+      log.type,
+      log.reps,
+      log.weight || ''
+    ]);
+    
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(','), ...rows.map(r => r.join(','))].join("\n");
     
     // Create download link
     const encodedUri = encodeURI(csvContent);
@@ -311,7 +317,8 @@ const App: React.FC = () => {
       const text = event.target?.result as string; if (!text) return; const newLogs: WorkoutLog[] = [];
       text.split('\n').forEach((line, index) => {
         if (!line.trim() || (index === 0 && (line.toLowerCase().includes('date')))) return;
-        const [dateStr, typeStr, repsStr, weightStr] = line.split(',').map(s => s.trim());
+        // Basic parsing - assumes no commas in values or quotes
+        const [dateStr, typeStr, repsStr, weightStr] = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
         if (dateStr && typeStr && repsStr) {
           newLogs.push({ id: generateId(), date: new Date(dateStr).toISOString(), type: typeStr as ExerciseType, reps: parseInt(repsStr) || 0, weight: weightStr ? parseFloat(weightStr) : undefined, user_id: profileId || undefined });
         }

@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'fittrack-v1.9.2';
+const CACHE_NAME = 'fittrack-v1.9.3';
 
 // We determine the base path dynamically or use relative paths
 const ASSETS_TO_PRECACHE = [
@@ -36,23 +36,29 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // For navigation requests, assume it's the SPA index.html
+  // For navigation requests (HTML), try Network first, then Cache
+  // This ensures updates are seen if online, but works offline.
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => {
-        // Fallback to cached index.html
-        // We use ignoreSearch to match requests regardless of query params
-        return caches.match('./index.html', { ignoreSearch: true })
-          .then(response => {
-             // If ./index.html path fails to match, try matching the scope root
-             return response || caches.match('./', { ignoreSearch: true });
-          });
-      })
+      fetch(request)
+        .then((response) => {
+           return caches.open(CACHE_NAME).then((cache) => {
+             cache.put(request, response.clone());
+             return response;
+           });
+        })
+        .catch(() => {
+          // Fallback to cached index.html
+          return caches.match('./index.html', { ignoreSearch: true })
+            .then(response => {
+               return response || caches.match('./', { ignoreSearch: true });
+            });
+        })
     );
     return;
   }
 
-  // For other assets, use Cache-First strategy
+  // For assets, Cache First, then Network
   event.respondWith(
     caches.match(request, { ignoreSearch: true }).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
@@ -60,6 +66,7 @@ self.addEventListener('fetch', (event) => {
         if (!networkResponse || networkResponse.status !== 200 || networkResponse.type === 'error') {
           return networkResponse;
         }
+        // Cache valid responses
         const responseToCache = networkResponse.clone();
         caches.open(CACHE_NAME).then((cache) => {
           // Only cache assets from our own origin or specific trusted CDNs

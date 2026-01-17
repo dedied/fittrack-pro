@@ -1,3 +1,4 @@
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -8,7 +9,7 @@ export default defineConfig({
   base: './', 
   build: {
     outDir: 'dist',
-    assetsDir: 'assets',
+    assetsDir: '', // Flatten assets to root to avoid relative path issues in PWA
     sourcemap: false,
     rollupOptions: {
       input: {
