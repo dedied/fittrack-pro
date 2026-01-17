@@ -1,10 +1,11 @@
+
 {
   "name": "FitTrack Pro",
   "short_name": "FitTrack",
-  "id": "fittrack-pro-v1.1.2",
+  "id": "fittrack-pro-v1.2.0",
   "description": "Elegant and simple fitness tracking for your workouts.",
-  "start_url": ".",
-  "scope": "./",
+  "start_url": "/fittrack-pro/index.html",
+  "scope": "/fittrack-pro/",
   "display": "standalone",
   "background_color": "#f8fafc",
   "theme_color": "#4f46e5",

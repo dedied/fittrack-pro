@@ -1,11 +1,12 @@
-const CACHE_NAME = 'fittrack-v1.1.2';
+
+const CACHE_NAME = 'fittrack-v1.2.0';
+const BASE_PATH = '/fittrack-pro/';
 const ASSETS_TO_PRECACHE = [
-  './',
-  'index.html',
-  'manifest.json'
+  BASE_PATH,
+  BASE_PATH + 'index.html',
+  BASE_PATH + 'manifest.json'
 ];
 
-// On install, cache the core shell
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
@@ -15,7 +16,6 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// On activate, clean up old caches and take control of clients immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     Promise.all([
@@ -35,44 +35,37 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // 1. Handle Navigation (Loading the App)
+  // Handle Navigation (Loading the App)
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(() => {
-        // Only return index.html for page navigation requests
-        return caches.match('index.html') || caches.match('./');
+        // Fallback to cached index.html
+        return caches.match(BASE_PATH + 'index.html') || caches.match(BASE_PATH);
       })
     );
     return;
   }
 
-  // 2. Handle Assets (JS, CSS, Images, ESM.sh imports)
+  // Handle Assets
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
+      if (cachedResponse) return cachedResponse;
 
       return fetch(request).then((networkResponse) => {
-        // Don't cache if not a successful response
         if (!networkResponse || networkResponse.status !== 200 || networkResponse.type === 'error') {
           return networkResponse;
         }
 
-        // Cache successful requests dynamically (includes esm.sh and other assets)
         const responseToCache = networkResponse.clone();
         caches.open(CACHE_NAME).then((cache) => {
-          // We cache assets from our origin and the esm.sh CDN
-          if (url.origin === self.location.origin || url.hostname.includes('esm.sh') || url.hostname.includes('fonts.')) {
+          // Cache assets from our origin or CDNs
+          if (url.origin === self.location.origin || url.hostname.includes('fonts.')) {
             cache.put(request, responseToCache);
           }
         });
 
         return networkResponse;
-      }).catch(() => {
-        // Return nothing for failed asset requests (prevents returning HTML for JS)
-        return null;
-      });
+      }).catch(() => null);
     })
   );
 });

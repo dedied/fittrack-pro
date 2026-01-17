@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: './',
+  // Matches the GitHub Pages repository name
+  base: '/fittrack-pro/', 
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
