@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js';
 import Layout, { TabType, SyncStatus } from './components/Layout';
@@ -14,7 +15,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
-type AppState = 'loading' | 'locked' | 'unlocked' | 'onboarding' | 'creatingPin';
+type AppState = 'loading' | 'locked' | 'unlocked' | 'onboarding' | 'creatingPin' | 'confirmingPinForBio';
 const MAX_PIN_ATTEMPTS = 5;
 
 const generateId = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).substring(2)}`;
@@ -28,6 +29,7 @@ const App: React.FC = () => {
 
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinAttempts, setPinAttempts] = useState(MAX_PIN_ATTEMPTS);
+  const [hasBiometrics, setHasBiometrics] = useState(false);
   
   // Profile & Auth State
   const [profileId, setProfileId] = useState<string | null>(null);
@@ -62,6 +64,9 @@ const App: React.FC = () => {
       setSupabase(client);
       
       const initializeAuth = async () => {
+        const bioAvailable = await secureStore.hasBiometrics();
+        setHasBiometrics(bioAvailable);
+
         if (await secureStore.isPinSet()) {
           setAppState('locked');
         } else {
@@ -140,6 +145,19 @@ const App: React.FC = () => {
     setPinError(null);
     const sessionData = await secureStore.get(pin);
     if (sessionData && supabase) {
+      // If we are confirming for biometrics, we don't need to set session again, just enable bio
+      if (appState === 'confirmingPinForBio') {
+        const success = await secureStore.enableBiometrics(pin);
+        if (success) {
+          setHasBiometrics(true);
+          setAppState('unlocked');
+          alert("Biometrics Enabled!");
+        } else {
+          setPinError("Biometric setup failed.");
+        }
+        return;
+      }
+
       const { error } = await supabase.auth.setSession(sessionData as any);
       if (error) {
         setPinError("Invalid session. Please log in again.");
@@ -153,6 +171,25 @@ const App: React.FC = () => {
       setPinError("Incorrect PIN");
       setPinAttempts(prev => prev - 1);
       if ('vibrate' in navigator) navigator.vibrate(100);
+    }
+  };
+
+  const handleBiometricUnlock = async () => {
+    const pin = await secureStore.getBiometricPin();
+    if (pin) {
+      await handlePinEnter(pin);
+    }
+  };
+
+  const handleToggleBiometrics = async () => {
+    if (hasBiometrics) {
+      if (window.confirm("Disable biometric unlock?")) {
+        await secureStore.disableBiometrics();
+        setHasBiometrics(false);
+      }
+    } else {
+      setPinError(null);
+      setAppState('confirmingPinForBio');
     }
   };
 
@@ -173,6 +210,7 @@ const App: React.FC = () => {
     await secureStore.clear();
     setPinAttempts(MAX_PIN_ATTEMPTS);
     setPinError(null);
+    setHasBiometrics(false);
     setAppState('onboarding');
     if (supabase) await supabase.auth.signOut();
   };
@@ -235,6 +273,7 @@ const App: React.FC = () => {
       if (supabase) await supabase.auth.signOut();
       setProfileId(null); setUser(null); setSyncStatus('unconfigured');
       setOnboardingStep('id'); setIdInput(''); setEmailInput(''); setOtpInput('');
+      setHasBiometrics(false);
       setAppState('onboarding');
     }
   };
@@ -297,8 +336,19 @@ const App: React.FC = () => {
     return <div className="h-[100dvh] bg-slate-50 flex items-center justify-center"><div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div></div>;
   }
 
-  if (appState === 'locked') {
-    return <PinLockScreen isCreating={false} onPinEnter={handlePinEnter} onReset={handleResetPin} error={pinError} attemptsLeft={pinAttempts} />;
+  // Reuse PinLockScreen for both Locked state and Confirming state
+  if (appState === 'locked' || appState === 'confirmingPinForBio') {
+    return (
+      <PinLockScreen 
+        isCreating={false} 
+        onPinEnter={handlePinEnter} 
+        onReset={appState === 'confirmingPinForBio' ? () => setAppState('unlocked') : handleResetPin} 
+        error={pinError} 
+        attemptsLeft={pinAttempts}
+        showBiometrics={appState === 'locked' && hasBiometrics}
+        onBiometricAuth={handleBiometricUnlock}
+      />
+    );
   }
 
   if (appState === 'creatingPin') {
@@ -358,6 +408,18 @@ const App: React.FC = () => {
             <button onClick={handleLogout} className="text-[10px] font-black text-slate-400 uppercase border-2 border-slate-50 px-4 py-2 rounded-xl hover:text-red-500">Sign Out</button>
           </div>
           <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
+            <button onClick={handleToggleBiometrics} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasBiometrics ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
+                {hasBiometrics ? (
+                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                ) : (
+                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 6" /><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" /><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" /><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" /><path d="M8.65 22c.21-.66.45-1.32.57-2" /><path d="M14 13.12c0 2.38 0 6.38-1 8.88" /><path d="M2 16h.01" /><path d="M21.8 16c.2-2 .131-5.354 0-6" /><path d="M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2" /></svg>
+                )}
+              </div>
+              <div className="text-left flex-1 font-bold">
+                {hasBiometrics ? "Disable Biometrics" : "Enable Biometrics"}
+              </div>
+            </button>
             <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div><div className="text-left flex-1 font-bold">Change PIN</div></button>
             <button onClick={handleInstallClick} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-indigo-600"><div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">📱</div><div className="text-left flex-1 font-bold">Install App</div></button>
             <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Import Data</div></button>

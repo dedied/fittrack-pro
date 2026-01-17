@@ -1,3 +1,4 @@
+
 // ==========================================
 // SECURE STORAGE UTILITY
 // Handles IndexedDB and Web Crypto API for
@@ -8,6 +9,7 @@ const DB_NAME = 'FitTrackSecureDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'secureStore';
 const SESSION_KEY = 'encryptedSession';
+const BIO_KEY = 'biometricPin';
 
 // --- IndexedDB Helpers ---
 
@@ -43,7 +45,6 @@ const dbAction = (type: 'get' | 'put' | 'delete', key: string, value?: any): Pro
 
 // --- Base64 Helpers ---
 const bufferToBase64 = (buffer: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buffer)));
-// FIX: Changed function to return Uint8Array instead of ArrayBuffer to match the type expected by `deriveKey`.
 const base64ToBuffer = (base64: string) => Uint8Array.from(atob(base64), c => c.charCodeAt(0));
 
 // --- Crypto Helpers ---
@@ -132,5 +133,75 @@ export const secureStore = {
   
   async clear(): Promise<void> {
     await dbAction('delete', SESSION_KEY);
+    await dbAction('delete', BIO_KEY);
   },
+
+  // --- Biometric Additions ---
+
+  async enableBiometrics(pin: string): Promise<boolean> {
+    if (!window.PublicKeyCredential) return false;
+    
+    try {
+       // Create a credential to register the device authenticator
+       const challenge = new Uint8Array(32);
+       window.crypto.getRandomValues(challenge);
+       
+       await navigator.credentials.create({
+         publicKey: {
+           challenge,
+           rp: { name: "FitTrack Pro" },
+           user: {
+             id: new Uint8Array(16),
+             name: "user",
+             displayName: "User"
+           },
+           pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
+           authenticatorSelection: { userVerification: "required" },
+           timeout: 60000,
+           attestation: 'none'
+         }
+       });
+       
+       // Store the PIN guarded by this logical check
+       await dbAction('put', BIO_KEY, { key: BIO_KEY, pin });
+       return true;
+    } catch (e) {
+       console.error("Biometric setup failed", e);
+       return false;
+    }
+  },
+
+  async disableBiometrics() {
+    await dbAction('delete', BIO_KEY);
+  },
+
+  async getBiometricPin(): Promise<string | null> {
+     const data = await dbAction('get', BIO_KEY);
+     if (!data || !data.pin) return null;
+
+     try {
+       const challenge = new Uint8Array(32);
+       window.crypto.getRandomValues(challenge);
+       
+       // Prompt for biometric authentication
+       await navigator.credentials.get({
+         publicKey: {
+           challenge,
+           userVerification: "required",
+           timeout: 60000
+         }
+       });
+       
+       // If successful, return the stored PIN
+       return data.pin;
+     } catch (e) {
+       console.error("Biometric auth failed", e);
+       return null;
+     }
+  },
+
+  async hasBiometrics(): Promise<boolean> {
+     const data = await dbAction('get', BIO_KEY);
+     return !!data;
+  }
 };
