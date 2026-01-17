@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout, { TabType } from './components/Layout';
 import ProgressChart from './components/ProgressChart';
@@ -340,7 +339,7 @@ const App: React.FC = () => {
               <div className="text-left"><p className="font-bold">Clear Data</p><p className="text-[10px] text-red-400 uppercase tracking-wide">Wipe all logs</p></div>
             </button>
           </div>
-          <div className="text-center opacity-30"><p className="text-[10px] uppercase font-black tracking-widest text-slate-500">FitTrack Pro v1.0.7</p></div>
+          <div className="text-center opacity-30"><p className="text-[10px] uppercase font-black tracking-widest text-slate-500">FitTrack Pro v1.1.0</p></div>
         </div>
       )}
     </Layout>

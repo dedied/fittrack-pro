@@ -1,8 +1,7 @@
-
 {
   "name": "FitTrack Pro",
   "short_name": "FitTrack",
-  "id": "fittrack-pro-v1.0.8",
+  "id": "fittrack-pro-v1.1.0",
   "description": "Elegant and simple fitness tracking for your workouts.",
   "start_url": "index.html",
   "scope": ".",

@@ -1,6 +1,6 @@
-
-const CACHE_NAME = 'fittrack-v1.0.8';
+const CACHE_NAME = 'fittrack-v1.1.0';
 const ASSETS = [
+  './',
   'index.html',
   'manifest.json',
   'https://cdn.tailwindcss.com',
@@ -11,8 +11,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      // Cache with 'reload' to bypass potentially broken local cache during update
-      return cache.addAll(ASSETS.map(url => new Request(url, {cache: 'reload'})));
+      return cache.addAll(ASSETS);
     })
   );
 });
@@ -29,34 +28,43 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  const url = new URL(request.url);
 
-  // For navigation requests (loading the app entry point)
+  // 1. Navigation requests (the page itself)
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          // If network response is okay, use it
-          if (response.ok) return response;
-          // If GitHub Pages returns a 404, fallback to cached index.html shell
-          return caches.match('index.html');
-        })
-        .catch(() => {
-          // Offline fallback
-          return caches.match('index.html');
-        })
+      fetch(request).catch(() => {
+        // Fallback to the cached index.html only for navigation
+        return caches.match('index.html') || caches.match('./');
+      })
     );
     return;
   }
 
-  // Standard asset handling
+  // 2. Assets (JS, CSS, Images)
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) return cachedResponse;
+    caches.match(request).then((response) => {
+      if (response) return response;
       
-      return fetch(request).catch(() => {
-        // Fallback for missing assets to avoid breakages
-        if (request.destination === 'image') return null;
-        return caches.match('index.html');
+      return fetch(request).then((networkResponse) => {
+        // Don't cache if not a successful response
+        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+          return networkResponse;
+        }
+
+        // Optional: Cache new assets on the fly
+        const responseToCache = networkResponse.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          // Only cache same-origin assets to be safe
+          if (url.origin === self.location.origin) {
+            cache.put(request, responseToCache);
+          }
+        });
+
+        return networkResponse;
+      }).catch(() => {
+        // Fail silently for assets (do NOT return index.html for a .js request)
+        return null;
       });
     })
   );
