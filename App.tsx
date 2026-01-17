@@ -61,6 +61,10 @@ const App: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
   
+  // Sync Error Handling
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [showSyncErrorDialog, setShowSyncErrorDialog] = useState(false);
+
   // History Drill Down State
   const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
 
@@ -159,6 +163,24 @@ const App: React.FC = () => {
     }
   }, [resendTimer]);
 
+  // Network Status Listeners
+  useEffect(() => {
+    const handleOnline = () => {
+       if (appState === 'unlocked' && user) syncWithCloud();
+    };
+    const handleOffline = () => {
+       setSyncStatus('offline');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [appState, user]);
+
   // Sync Logic
   useEffect(() => {
     if (appState === 'unlocked' && user && supabase) {
@@ -168,7 +190,14 @@ const App: React.FC = () => {
 
   const syncWithCloud = async () => {
     if (!supabase || !user) return;
+    
+    if (!navigator.onLine) {
+        setSyncStatus('offline');
+        return;
+    }
+
     setSyncStatus('syncing');
+    setSyncError(null);
     try {
       // 1. Fetch Cloud Data (Source of Truth for existing IDs)
       const { data: cloudLogs, error: fetchError } = await supabase.from('workouts').select('*');
@@ -213,10 +242,31 @@ const App: React.FC = () => {
       });
 
       setSyncStatus('synced');
-    } catch (err) {
+    } catch (err: any) {
       console.error("Sync error:", err);
-      setSyncStatus('offline');
+      setSyncStatus('error');
+      setSyncError(err.message || "An unknown error occurred during sync.");
+      setToastMessage("⚠️ Sync failed");
+      setTimeout(() => setToastMessage(null), 3000);
     }
+  };
+
+  const handleSyncClick = () => {
+    if (syncStatus === 'error') {
+      setShowSyncErrorDialog(true);
+    } else if (syncStatus === 'synced') {
+      setToastMessage("All data is synced");
+      setTimeout(() => setToastMessage(null), 2000);
+    } else if (syncStatus === 'offline') {
+      alert("You are currently offline. Sync will resume automatically when connection is restored.");
+      // Attempt to sync anyway in case browser status is stale
+      syncWithCloud();
+    }
+  };
+
+  const handleRetrySync = () => {
+    setShowSyncErrorDialog(false);
+    syncWithCloud();
   };
 
   useEffect(() => localStorage.setItem('fit_logs', JSON.stringify(logs)), [logs]);
@@ -585,9 +635,17 @@ const App: React.FC = () => {
     if (supabase && user) {
       setSyncStatus('syncing'); 
       const { error } = await supabase.from('workouts').insert([log]); 
-      setSyncStatus(error ? 'offline' : 'synced');
+      if (error) {
+         setSyncStatus('error');
+         setSyncError(error.message);
+         setToastMessage("⚠️ Sync failed");
+         setTimeout(() => setToastMessage(null), 3000);
+      } else {
+         setSyncStatus('synced');
+         setSyncError(null);
+      }
     }
-    setTimeout(() => { setToastMessage(null); setActiveTab('dashboard'); }, 1500);
+    setTimeout(() => { if (toastMessage === "✓ Logged!") setToastMessage(null); setActiveTab('dashboard'); }, 1500);
   };
   
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -749,7 +807,7 @@ const App: React.FC = () => {
           cursor: pointer;
         }
       `}</style>
-      <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus}>
+      <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={handleSyncClick}>
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             <ProgressChart logs={logs} />
@@ -898,6 +956,27 @@ const App: React.FC = () => {
         )}
       </Layout>
       
+      {/* Sync Error Dialog */}
+      {showSyncErrorDialog && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm overlay-animate" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center dialog-animate">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
+               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <h2 className="text-xl font-black text-slate-800">Sync Error</h2>
+            <p className="text-slate-500 mt-2 text-sm break-words">{syncError || "An unknown network error occurred."}</p>
+            <div className="mt-6 flex gap-3">
+              <button onClick={() => setShowSyncErrorDialog(false)} className="flex-1 bg-slate-100 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors">
+                Dismiss
+              </button>
+              <button onClick={handleRetrySync} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors">
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Confirmation Dialog */}
       {showClearDataConfirm && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm overlay-animate" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-description">

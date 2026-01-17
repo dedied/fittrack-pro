@@ -3,18 +3,19 @@ import React, { useState, useRef } from 'react';
 
 export type TabType = 'dashboard' | 'add' | 'settings' | 'auth';
 
-export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'unconfigured';
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'unconfigured' | 'error';
 
 interface LayoutProps {
   children: React.ReactNode;
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
   syncStatus?: SyncStatus;
+  onSyncClick?: () => void;
 }
 
 const REFRESH_THRESHOLD = 80;
 
-const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, syncStatus = 'unconfigured' }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, syncStatus = 'unconfigured', onSyncClick }) => {
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const scrollRef = useRef<HTMLElement>(null);
@@ -62,6 +63,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
         return <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" title="Syncing..." />;
       case 'synced':
         return <div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" title="All data synced" />;
+      case 'error':
+        return <div className="w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.5)]" title="Sync Error" />;
       case 'offline':
         return <div className="w-2 h-2 bg-slate-300 rounded-full" title="Offline" />;
       default:
@@ -90,7 +93,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
         <div className="w-8" /> {/* Spacer */}
         <h1 className="text-xl font-black text-slate-800 tracking-tight">FitTrack Pro</h1>
         <div className="w-8 flex justify-end items-center">
-          {renderSyncIcon()}
+          <button onClick={onSyncClick} className="p-2 -mr-2 active:opacity-50 transition-opacity">
+            {renderSyncIcon()}
+          </button>
         </div>
       </header>
       
