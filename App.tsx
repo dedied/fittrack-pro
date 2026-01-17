@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout, { TabType } from './components/Layout';
 import ProgressChart from './components/ProgressChart';
@@ -134,7 +133,7 @@ const App: React.FC = () => {
   };
 
   const clearAllData = () => {
-    if (window.confirm("Delete all workout history?")) {
+    if (window.confirm("Delete all workout history? This cannot be undone.")) {
       setLogs([]);
       localStorage.removeItem('fit_logs');
       setActiveTab('dashboard');
@@ -187,6 +186,8 @@ const App: React.FC = () => {
       }
     };
     reader.readAsText(file);
+    // Clear the input so the same file can be selected again
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
@@ -270,15 +271,57 @@ const App: React.FC = () => {
 
       {activeTab === 'settings' && (
         <div className="space-y-8 animate-in fade-in duration-300">
-          <header className="text-center py-4"><h2 className="text-2xl font-bold text-slate-800">Settings</h2></header>
+          <header className="text-center py-4">
+            <h2 className="text-2xl font-bold text-slate-800">Settings</h2>
+          </header>
+          
           <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
-            {deferredPrompt && <button onClick={handleInstallClick} className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-indigo-600">Install App</button>}
-            <button onClick={exportToCSV} className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800">Export CSV</button>
-            <button onClick={() => fileInputRef.current?.click()} className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800">Import CSV</button>
-            <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
-            <button onClick={clearAllData} className="w-full p-5 flex items-center gap-4 hover:bg-red-50 font-bold text-red-600">Wipe Data</button>
+            {deferredPrompt && (
+              <button 
+                onClick={handleInstallClick} 
+                className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-indigo-600"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Install App
+              </button>
+            )}
+            
+            <button 
+              onClick={exportToCSV} 
+              className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Export CSV
+            </button>
+            
+            <button 
+              onClick={() => fileInputRef.current?.click()} 
+              className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Import CSV
+            </button>
+            
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleImportCSV} 
+              accept=".csv" 
+              className="hidden" 
+            />
+            
+            <button 
+              onClick={clearAllData} 
+              className="w-full p-5 flex items-center gap-4 hover:bg-red-50 font-bold text-red-600"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+              Wipe Data
+            </button>
           </div>
-          <p className="text-center text-[10px] uppercase font-bold text-slate-300 tracking-widest">{isInstalled ? 'App Mode' : 'Browser Mode'}</p>
+          
+          <p className="text-center text-[10px] uppercase font-bold text-slate-300 tracking-widest">
+            {isInstalled ? 'App Mode' : 'Browser Mode'} • v1.0.0
+          </p>
         </div>
       )}
     </Layout>
