@@ -1,5 +1,4 @@
-
-const CACHE_NAME = 'fittrack-v1.2.0';
+const CACHE_NAME = 'fittrack-v1.2.3';
 const BASE_PATH = '/fittrack-pro/';
 const ASSETS_TO_PRECACHE = [
   BASE_PATH,

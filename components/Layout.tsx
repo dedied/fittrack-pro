@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 export type TabType = 'dashboard' | 'add' | 'settings';
 
@@ -9,25 +9,119 @@ interface LayoutProps {
   setActiveTab: (tab: TabType) => void;
 }
 
+const REFRESH_THRESHOLD = 80;
+
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const scrollRef = useRef<HTMLElement>(null);
+  const touchStartRef = useRef<number>(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (scrollRef.current && scrollRef.current.scrollTop === 0 && !isRefreshing) {
+      touchStartRef.current = e.touches[0].clientY;
+    } else {
+      touchStartRef.current = 0;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartRef.current === 0 || isRefreshing) return;
+
+    const touchY = e.touches[0].clientY;
+    const distance = touchY - touchStartRef.current;
+
+    if (distance > 0) {
+      // Use a logarithmic-like resistance for the pull effect
+      const resistance = 0.4;
+      const dampedDistance = Math.min(distance * resistance, REFRESH_THRESHOLD + 20);
+      setPullDistance(dampedDistance);
+      
+      // Prevent default scroll when pulling down at the top
+      if (e.cancelable) e.preventDefault();
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (pullDistance >= REFRESH_THRESHOLD) {
+      triggerRefresh();
+    } else {
+      setPullDistance(0);
+    }
+    touchStartRef.current = 0;
+  };
+
+  const triggerRefresh = () => {
+    setIsRefreshing(true);
+    setPullDistance(REFRESH_THRESHOLD);
+    
+    // Haptic feedback
+    if ('vibrate' in navigator) {
+      navigator.vibrate(50);
+    }
+
+    // Give a small delay for the animation to feel good before reloading
+    setTimeout(() => {
+      window.location.reload();
+    }, 600);
+  };
+
   return (
-    <div className="h-[100dvh] w-full flex flex-col bg-slate-50 overflow-hidden">
+    <div className="h-[100dvh] w-full flex flex-col bg-slate-50 overflow-hidden relative">
+      {/* Pull-to-Refresh Indicator */}
+      <div 
+        className="absolute left-0 right-0 flex justify-center pointer-events-none z-20"
+        style={{ 
+          transform: `translateY(${pullDistance - 40}px)`,
+          opacity: Math.min(pullDistance / REFRESH_THRESHOLD, 1),
+          transition: touchStartRef.current === 0 ? 'transform 0.3s cubic-bezier(0.2, 0, 0.2, 1), opacity 0.3s' : 'none'
+        }}
+      >
+        <div className={`bg-white rounded-full p-2 shadow-lg border border-slate-100 flex items-center justify-center ${isRefreshing ? 'animate-spin' : ''}`}>
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            width="20" 
+            height="20" 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor" 
+            strokeWidth="3" 
+            strokeLinecap="round" 
+            strokeLinejoin="round" 
+            className="text-indigo-600"
+            style={{ transform: `rotate(${pullDistance * 4}deg)` }}
+          >
+            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+            <polyline points="21 3 21 8 16 8" />
+          </svg>
+        </div>
+      </div>
+
       {/* Fixed Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0 z-30 shadow-sm">
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0 z-30 shadow-sm relative">
         <h1 className="text-xl font-bold text-slate-800 tracking-tight text-center">FitTrack Pro</h1>
       </header>
       
       {/* Scrollable Main Content Area */}
-      <main className="flex-1 overflow-y-auto custom-scrollbar w-full max-w-lg mx-auto">
+      <main 
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto custom-scrollbar w-full max-w-lg mx-auto relative"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{ 
+          transform: `translateY(${pullDistance * 0.5}px)`,
+          transition: touchStartRef.current === 0 ? 'transform 0.3s cubic-bezier(0.2, 0, 0.2, 1)' : 'none'
+        }}
+      >
         <div className="p-4 pb-12">
           {children}
         </div>
       </main>
 
-      {/* Navigation Bar - Always at the bottom of the visible screen */}
+      {/* Navigation Bar */}
       <nav className="flex-shrink-0 bg-white border-t border-slate-200 w-full z-40">
         <div className="max-w-lg mx-auto flex h-20 items-center px-4 relative">
-          {/* Left Tab: Stats/Dashboard */}
           <div className="flex-1 flex justify-center">
             <button 
               onClick={() => setActiveTab('dashboard')}
@@ -38,7 +132,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
             </button>
           </div>
 
-          {/* Central Floating Button: Add Workout */}
           <div className="flex-none px-6">
             <button 
               onClick={() => setActiveTab('add')}
@@ -48,7 +141,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
             </button>
           </div>
 
-          {/* Right Tab: Settings */}
           <div className="flex-1 flex justify-center">
             <button 
               onClick={() => setActiveTab('settings')}

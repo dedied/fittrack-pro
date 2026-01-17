@@ -1,10 +1,11 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout, { TabType } from './components/Layout';
 import ProgressChart from './components/ProgressChart';
 import { WorkoutLog, EXERCISES, ExerciseType } from './types';
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+const APP_VERSION = "1.2.3";
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -208,7 +209,6 @@ const App: React.FC = () => {
         <div className="space-y-6 animate-in fade-in duration-500">
           <section><ProgressChart logs={logs} /></section>
 
-          {/* Restored Period Totals Section */}
           <section className="space-y-3">
             <div className="flex items-center justify-between ml-1">
               <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Period Totals</h2>
@@ -287,28 +287,44 @@ const App: React.FC = () => {
       {activeTab === 'settings' && (
         <div className="space-y-6 animate-in fade-in duration-300">
           <header className="text-center"><h2 className="text-2xl font-bold text-slate-800">Settings</h2></header>
+          
           <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
             <button onClick={handleInstallClick} className={`w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 transition-all ${isInstalled ? 'text-emerald-600' : 'text-indigo-600'}`}>
               <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isInstalled ? 'bg-emerald-100' : 'bg-indigo-100'}`}>
                 {isInstalled ? <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
               </div>
-              <div className="text-left"><p className="font-bold">{isInstalled ? 'App Installed' : 'Install FitTrack Pro'}</p><p className="text-[10px] text-slate-400 uppercase">{isInstalled ? 'App Mode Active' : 'Add to home screen'}</p></div>
+              <div className="text-left flex-1"><p className="font-bold">{isInstalled ? 'App Installed' : 'Install FitTrack Pro'}</p><p className="text-[10px] text-slate-400 uppercase">{isInstalled ? 'App Mode Active' : 'Add to home screen'}</p></div>
             </button>
             <button onClick={exportToCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 text-slate-800">
               <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-600"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
-              <div className="text-left"><p className="font-bold">Export History</p><p className="text-[10px] text-slate-400 uppercase">Download .CSV</p></div>
+              <div className="text-left flex-1"><p className="font-bold">Export History</p><p className="text-[10px] text-slate-400 uppercase">Download .CSV</p></div>
             </button>
             <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 text-slate-800">
               <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-600"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
-              <div className="text-left"><p className="font-bold">Import History</p><p className="text-[10px] text-slate-400 uppercase">Restore .CSV</p></div>
+              <div className="text-left flex-1"><p className="font-bold">Import History</p><p className="text-[10px] text-slate-400 uppercase">Restore .CSV</p></div>
             </button>
             <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
-            <button onClick={clearAllData} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600 transition-colors">
+            <button onClick={clearAllData} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600 transition-colors border-b border-slate-50">
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0 text-red-600"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></div>
-              <div className="text-left"><p className="font-bold">Clear Data</p><p className="text-[10px] text-red-400 uppercase">Wipe all history</p></div>
+              <div className="text-left flex-1"><p className="font-bold">Clear Data</p><p className="text-[10px] text-red-400 uppercase">Wipe all history</p></div>
             </button>
+            
+            {/* Dedicated App Info Section */}
+            <div className="p-6 bg-slate-50/50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-[10px] font-black">FP</div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">FitTrack Pro</p>
+                  <p className="text-[10px] text-slate-400 font-bold">Premium Mobile Tracker</p>
+                </div>
+              </div>
+              <div className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase">
+                v{APP_VERSION}
+              </div>
+            </div>
           </div>
-          <p className="text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">Version 1.2.2</p>
+          
+          <p className="text-center text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">Built for performance & privacy</p>
         </div>
       )}
 
