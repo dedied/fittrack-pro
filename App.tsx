@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout, { TabType } from './components/Layout';
 import ProgressChart from './components/ProgressChart';
@@ -5,7 +6,6 @@ import { WorkoutLog, EXERCISES, ExerciseType } from './types';
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
-// Robust unique ID generator for mobile compatibility
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -18,7 +18,6 @@ const App: React.FC = () => {
   const [totalsTimeFrame, setTotalsTimeFrame] = useState<TimeFrame>('weekly');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // PWA Installation State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState(false);
 
@@ -42,7 +41,6 @@ const App: React.FC = () => {
     localStorage.setItem('fit_logs', JSON.stringify(logs));
   }, [logs]);
 
-  // PWA installation listener
   useEffect(() => {
     const handler = (e: any) => {
       e.preventDefault();
@@ -114,19 +112,14 @@ const App: React.FC = () => {
       });
       
       const totalReps = filteredLogs.reduce((acc, curr) => acc + curr.reps, 0);
-      const maxWeightPeriod = filteredLogs.length > 0 
-        ? Math.max(...filteredLogs.map(l => l.weight || 0)) 
-        : 0;
-      return { ...ex, totalReps, maxWeightPeriod };
+      return { ...ex, totalReps };
     });
   }, [logs, totalsTimeFrame]);
 
   const handleAddLog = (e: React.MouseEvent) => {
     e.stopPropagation();
-    
     const repsNum = parseInt(newEntry.reps);
     if (isNaN(repsNum) || repsNum <= 0) return;
-
     const weightNum = parseFloat(newEntry.weight);
 
     const log: WorkoutLog = {
@@ -157,14 +150,7 @@ const App: React.FC = () => {
       return;
     }
     const headers = ['ID', 'Date_ISO', 'Exercise', 'Reps', 'Weight'];
-    const rows = logs.map(log => [
-      log.id,
-      log.date,
-      log.type,
-      log.reps,
-      log.weight || 0
-    ]);
-    
+    const rows = logs.map(log => [log.id, log.date, log.type, log.reps, log.weight || 0]);
     const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -183,27 +169,17 @@ const App: React.FC = () => {
       try {
         const content = e.target?.result as string;
         if (!content) return;
-        
         const lines = content.split('\n');
         const newLogs: WorkoutLog[] = [];
-        let skipped = 0;
-
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i].trim();
           if (!line) continue;
-          
           const parts = line.split(',').map(p => p.trim());
-          if (parts.length < 4) {
-            skipped++;
-            continue;
-          }
-
+          if (parts.length < 4) continue;
           const [id, dateIso, type, repsStr, weightStr] = parts;
-          
           const reps = parseInt(repsStr);
           const weight = weightStr ? parseFloat(weightStr) : undefined;
           const dateObj = new Date(dateIso);
-
           if (!isNaN(dateObj.getTime()) && !isNaN(reps)) {
             newLogs.push({ 
               id: id || generateId(), 
@@ -212,25 +188,17 @@ const App: React.FC = () => {
               reps, 
               weight: weight !== 0 ? weight : undefined 
             });
-          } else {
-            skipped++;
           }
         }
-
         if (newLogs.length > 0) {
           setLogs(prev => {
             const combined = [...newLogs, ...prev];
             const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
             return unique.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
           });
-          alert(`Import complete! Successfully imported ${newLogs.length} records.${skipped > 0 ? ` (Skipped ${skipped} invalid rows)` : ''}`);
-        } else {
-          alert("Could not find any valid workout data in the file.");
+          alert(`Imported ${newLogs.length} records.`);
         }
-      } catch (err) {
-        console.error("Import error:", err);
-        alert("An error occurred while parsing the CSV file.");
-      }
+      } catch (err) { alert("Error parsing CSV."); }
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -276,7 +244,6 @@ const App: React.FC = () => {
           <section className="space-y-3">
             <div className="flex items-center justify-between ml-1">
               <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Period Totals</h2>
-              {/* Local Timeframe Filter for Period Totals */}
               <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">
                 {(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map((tf) => (
                   <button
@@ -312,7 +279,6 @@ const App: React.FC = () => {
             <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Record Set</h2>
             <p className="text-slate-400 text-xs font-medium uppercase mt-1">Select exercise & log details</p>
           </div>
-          
           <div className="space-y-2">
             {EXERCISES.map(ex => (
               <button
@@ -321,130 +287,60 @@ const App: React.FC = () => {
                 className={`flex items-center gap-4 p-4 rounded-2xl border-2 w-full transition-all active:scale-[0.98] ${newEntry.type === ex.id ? 'border-indigo-600 bg-indigo-50/50 shadow-sm' : 'border-slate-100 bg-white'}`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10 shrink-0`}>{ex.icon}</div>
-                <div className="text-left flex-1">
-                  <p className="font-bold text-slate-800">{ex.label}</p>
-                </div>
-                {newEntry.type === ex.id && (
-                  <div className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  </div>
-                )}
+                <div className="text-left flex-1 font-bold text-slate-800">{ex.label}</div>
+                {newEntry.type === ex.id && <div className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>}
               </button>
             ))}
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Reps</label>
-              <input 
-                type="number" 
-                inputMode="numeric" 
-                value={newEntry.reps} 
-                onChange={(e) => setNewEntry({ ...newEntry, reps: e.target.value })} 
-                placeholder="0" 
-                className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" 
-              />
+              <input type="number" inputMode="numeric" value={newEntry.reps} onChange={(e) => setNewEntry({ ...newEntry, reps: e.target.value })} placeholder="0" className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" />
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Weight (kg)</label>
-              <input 
-                type="number" 
-                inputMode="decimal" 
-                value={newEntry.weight} 
-                onChange={(e) => setNewEntry({ ...newEntry, weight: e.target.value })} 
-                placeholder="0" 
-                disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} 
-                className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl outline-none disabled:opacity-30 disabled:bg-slate-100 focus:ring-4 focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" 
-              />
+              <input type="number" inputMode="decimal" value={newEntry.weight} onChange={(e) => setNewEntry({ ...newEntry, weight: e.target.value })} placeholder="0" disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl outline-none disabled:opacity-30 disabled:bg-slate-100 focus:ring-4 focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" />
             </div>
           </div>
-
-          <div className="pt-2">
-            <button 
-              onClick={handleAddLog} 
-              disabled={!newEntry.reps || parseInt(newEntry.reps) <= 0} 
-              className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-all disabled:opacity-50 uppercase tracking-widest flex items-center justify-center gap-3"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-              Save Set
-            </button>
-          </div>
+          <button onClick={handleAddLog} disabled={!newEntry.reps || parseInt(newEntry.reps) <= 0} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-all disabled:opacity-50 uppercase tracking-widest flex items-center justify-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg> Save Set
+          </button>
         </div>
       )}
 
       {activeTab === 'settings' && (
         <div className="space-y-6 animate-in fade-in duration-300">
-          <header className="text-center">
-            <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Settings</h2>
-          </header>
-          
+          <header className="text-center"><h2 className="text-2xl font-bold text-slate-800 tracking-tight">Settings</h2></header>
           <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-            {deferredPrompt && (
-              <button 
-                onClick={handleInstallClick} 
-                className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-indigo-600 transition-colors"
-              >
-                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                </div>
-                <div className="text-left">
-                  <p className="font-bold">Install FitTrack Pro</p>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Add to home screen</p>
-                </div>
-              </button>
-            )}
-            
-            <button 
-              onClick={exportToCSV} 
-              className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800 transition-colors"
-            >
+            {deferredPrompt && <button onClick={handleInstallClick} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-indigo-600 transition-colors">
+              <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center shrink-0 text-indigo-600">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </div>
+              <div className="text-left"><p className="font-bold">Install FitTrack Pro</p><p className="text-[10px] text-slate-400 uppercase tracking-wide">Add to home screen</p></div>
+            </button>}
+            <button onClick={exportToCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800 transition-colors">
               <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               </div>
-              <div className="text-left">
-                <p className="font-bold">Export History</p>
-                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Download .CSV</p>
-              </div>
+              <div className="text-left"><p className="font-bold">Export History</p><p className="text-[10px] text-slate-400 uppercase tracking-wide">Download .CSV</p></div>
             </button>
-            
-            <button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800 transition-colors"
-            >
+            <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800 transition-colors">
               <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               </div>
-              <div className="text-left">
-                <p className="font-bold">Import History</p>
-                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Restore .CSV</p>
-              </div>
+              <div className="text-left"><p className="font-bold">Import History</p><p className="text-[10px] text-slate-400 uppercase tracking-wide">Restore .CSV</p></div>
             </button>
-            
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleImportCSV} 
-              accept=".csv" 
-              className="hidden" 
-            />
-            
-            <button 
-              onClick={clearAllData} 
-              className="w-full p-6 flex items-center gap-4 hover:bg-red-50 font-bold text-red-600 transition-colors"
-            >
+            <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
+            <button onClick={clearAllData} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 font-bold text-red-600 transition-colors">
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
               </div>
-              <div className="text-left">
-                <p className="font-bold">Clear Data</p>
-                <p className="text-[10px] text-red-400 uppercase tracking-wide">Wipe all logs</p>
-              </div>
+              <div className="text-left"><p className="font-bold">Clear Data</p><p className="text-[10px] text-red-400 uppercase tracking-wide">Wipe all logs</p></div>
             </button>
           </div>
-          
-          <div className="text-center opacity-30">
-            <p className="text-[10px] uppercase font-black tracking-widest text-slate-500">FitTrack Pro v1.0.6</p>
-          </div>
+          <div className="text-center opacity-30"><p className="text-[10px] uppercase font-black tracking-widest text-slate-500">FitTrack Pro v1.0.7</p></div>
         </div>
       )}
     </Layout>

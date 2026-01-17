@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'fittrack-v1.0.5';
+const CACHE_NAME = 'fittrack-v1.0.7';
 const ASSETS = [
   './',
   './index.html',
@@ -28,14 +28,20 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // For navigation requests (loading the app), try the network but fall back to cached index.html
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        return caches.match('./index.html') || caches.match('./');
+      })
+    );
+    return;
+  }
+
+  // For all other assets, use Cache-First strategy
   event.respondWith(
     caches.match(event.request).then((response) => {
-      return response || fetch(event.request).catch(() => {
-        // Fallback for offline mode if the request isn't in cache
-        if (event.request.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
-      });
+      return response || fetch(event.request);
     })
   );
 });
