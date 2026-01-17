@@ -1,7 +1,9 @@
-import { GoogleGenAI, Type } from "@google/genai";
+
+import { GoogleGenAI } from "@google/genai";
 import { WorkoutLog, EXERCISES } from "../types";
 
 export const getAIInsights = async (logs: WorkoutLog[]): Promise<string> => {
+  // Use a named parameter for the API key as required by the SDK
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const recentLogs = logs.slice(-20); // Last 20 logs for context
@@ -23,12 +25,14 @@ export const getAIInsights = async (logs: WorkoutLog[]): Promise<string> => {
         ${dataSummary || "No data yet."}
       `,
       config: {
+        // Combined maxOutputTokens and thinkingConfig to reserve space for final output
         maxOutputTokens: 200,
         thinkingConfig: { thinkingBudget: 100 },
         temperature: 0.7,
       }
     });
 
+    // Access the text property directly without calling it as a method
     return response.text || "Keep pushing! Every rep and every kilo counts towards your goal.";
   } catch (error) {
     console.error("Gemini Insight Error:", error);

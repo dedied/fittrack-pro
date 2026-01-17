@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -50,7 +51,7 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(err => {
+        navigator.worker.register('./sw.js').catch(err => {
           console.log('ServiceWorker registration failed: ', err);
         });
       });
