@@ -96,6 +96,10 @@ const App: React.FC = () => {
       }));
     } catch { return []; }
   });
+  
+  // Ref to keep track of logs for async operations without dependencies
+  const logsRef = useRef(logs);
+  useEffect(() => { logsRef.current = logs; }, [logs]);
 
   const [newEntry, setNewEntry] = useState({ type: 'pushups' as ExerciseType, reps: '', weight: '' });
   const [entryDate, setEntryDate] = useState(new Date());
@@ -171,32 +175,33 @@ const App: React.FC = () => {
       if (fetchError) throw fetchError;
       
       const cloudMap = new Map((cloudLogs || []).map(l => [l.id, l]));
+      const currentLogs = logsRef.current;
 
       // 2. Identify Local Data to Upload
       //    - Items that are NOT in the cloud map (newly created offline)
       //    - Items that don't have an owner_id yet (created as guest)
-      let toUpload: WorkoutLog[] = [];
-      
-      setLogs(currentLogs => {
-        // Find logs that need uploading
-        toUpload = currentLogs
-          .filter(ll => !cloudMap.has(ll.id) || !ll.owner_id)
-          .map(ll => ({ ...ll, owner_id: user.id }));
+      const toUpload = currentLogs
+        .filter(ll => !cloudMap.has(ll.id) || !ll.owner_id)
+        .map(ll => ({ ...ll, owner_id: user.id }));
 
-        // 3. MERGE STRATEGY: Cloud Wins on Conflict
-        //    - Start with all Cloud Logs
-        //    - Add any Local Logs that were NOT found in Cloud (new items)
-        
+      // 3. Perform Upload
+      if (toUpload.length > 0) {
+        const { error: upsertError } = await supabase.from('workouts').upsert(toUpload);
+        if (upsertError) throw upsertError;
+      }
+
+      // 4. Merge & Update Local State
+      setLogs(prevLogs => {
         const mergedMap = new Map<string, WorkoutLog>();
         
-        // Add all Cloud logs first (they overwrite local if ID matches)
+        // Start with Cloud Data (Source of Truth)
         cloudLogs?.forEach(cl => mergedMap.set(cl.id, cl));
 
-        // Add Local logs that aren't in cloud yet
-        currentLogs.forEach(ll => {
+        // Add Local logs that aren't in cloud map yet
+        // (This covers items we just uploaded but aren't in the stale cloudLogs array, 
+        //  and any new items added by the user during this sync process)
+        prevLogs.forEach(ll => {
           if (!mergedMap.has(ll.id)) {
-            // This is a local-only item, keep it
-            // Ensure it has the owner_id attached if we are about to upload it
             mergedMap.set(ll.id, { ...ll, owner_id: user.id });
           }
         });
@@ -206,12 +211,6 @@ const App: React.FC = () => {
           
         return finalLogs;
       });
-
-      // 4. Perform Upload
-      if (toUpload.length > 0) {
-        const { error: upsertError } = await supabase.from('workouts').upsert(toUpload);
-        if (upsertError) throw upsertError;
-      }
 
       setSyncStatus('synced');
     } catch (err) {
