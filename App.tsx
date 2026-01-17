@@ -23,7 +23,12 @@ const generateId = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('loading');
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-  const [totalsTimeFrame, setTotalsTimeFrame] = useState<TimeFrame>('weekly');
+  
+  // Initialize from local storage or default to 'weekly'
+  const [totalsTimeFrame, setTotalsTimeFrame] = useState<TimeFrame>(() => {
+    return (localStorage.getItem('fit_totals_timeframe') as TimeFrame) || 'weekly';
+  });
+
   const [showToast, setShowToast] = useState(false);
   
   // History Drill Down State
@@ -41,7 +46,7 @@ const App: React.FC = () => {
   const [emailInput, setEmailInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState<'id' | 'email' | 'otp'>('id');
+  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'id' | 'email' | 'otp'>('welcome');
   const [existingProfile, setExistingProfile] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
   const [resendTimer, setResendTimer] = useState(0);
@@ -60,6 +65,11 @@ const App: React.FC = () => {
 
   const [newEntry, setNewEntry] = useState({ type: 'pushups' as ExerciseType, reps: '', weight: '' });
 
+  // Save totalsTimeFrame preference whenever it changes
+  useEffect(() => {
+    localStorage.setItem('fit_totals_timeframe', totalsTimeFrame);
+  }, [totalsTimeFrame]);
+
   // Initialize Supabase & App State
   useEffect(() => {
     const isPlaceholder = SUPABASE_URL.includes('your-project');
@@ -74,13 +84,19 @@ const App: React.FC = () => {
         if (await secureStore.isPinSet()) {
           setAppState('locked');
         } else {
-          // No PIN set, allow default access if session exists
+          // No PIN set, check for session
           const { data: { session } } = await client.auth.getSession();
           if (session?.user) {
             await resolveProfileForUser(client, session.user.id, session);
             setAppState('unlocked');
           } else {
-            setAppState('onboarding');
+            // Check if user previously skipped auth (Offline Mode)
+            if (localStorage.getItem('fit_skip_auth') === 'true') {
+              setAppState('unlocked');
+            } else {
+              setAppState('onboarding');
+              setOnboardingStep('welcome');
+            }
           }
         }
       };
@@ -155,9 +171,6 @@ const App: React.FC = () => {
     if (sessionData && supabase) {
       // If we are just enabling security (creating pin), enable bio now
       if (appState === 'creatingPin') {
-         // This state is reached via handlePinCreate's callback loop if we used the same component logic, 
-         // but we handle handlePinCreate separately below. 
-         // This block handles specific re-auth scenarios if needed.
          return;
       }
 
@@ -232,10 +245,21 @@ const App: React.FC = () => {
     setPinError(null);
     setHasBiometrics(false);
     setAppState('onboarding');
+    setOnboardingStep('id');
     if (supabase) await supabase.auth.signOut();
   };
   
   // --- Existing Auth Handlers (Modified) ---
+  
+  const handleSkipAuth = () => {
+    localStorage.setItem('fit_skip_auth', 'true');
+    setAppState('unlocked');
+  };
+
+  const handleConnectCloud = () => {
+    setOnboardingStep('id');
+    setAppState('onboarding');
+  };
 
   const handleCheckId = async (e: React.FormEvent) => {
     e.preventDefault(); if (!supabase) return; const cleanId = idInput.trim().toLowerCase(); if (!cleanId) return;
@@ -283,7 +307,7 @@ const App: React.FC = () => {
       }
       setProfileId(cleanId);
       setUser(session.user);
-      // Skip PIN creation by default, go straight to unlocked
+      localStorage.removeItem('fit_skip_auth'); // Clear skip flag if user logs in
       setAppState('unlocked');
     } catch (err: any) { alert("Setup failed: " + err.message); }
   };
@@ -296,6 +320,7 @@ const App: React.FC = () => {
       setOnboardingStep('id'); setIdInput(''); setEmailInput(''); setOtpInput('');
       setHasBiometrics(false);
       setAppState('onboarding');
+      // Note: we don't clear logs here to preserve local data
     }
   };
 
@@ -386,7 +411,24 @@ const App: React.FC = () => {
 
   const maxStats = useMemo(() => EXERCISES.map(ex => {
     const exerciseLogs = logs.filter(log => log.type === ex.id);
-    return { ...ex, maxRep: Math.max(0, ...exerciseLogs.map(l => l.reps)), maxWeight: Math.max(0, ...exerciseLogs.map(l => l.weight || 0)) };
+    if (exerciseLogs.length === 0) return { ...ex, maxRep: 0, maxRepDate: null, maxWeight: 0, maxWeightDate: null };
+
+    // Find Log with Max Reps (prefer most recent on tie)
+    const maxRepLog = exerciseLogs.reduce((prev, current) => (prev.reps >= current.reps ? prev : current), exerciseLogs[0]);
+    
+    // Find Log with Max Weight (prefer most recent on tie)
+    let maxWeightLog = null;
+    if (ex.isWeighted) {
+        maxWeightLog = exerciseLogs.reduce((prev, current) => ((prev.weight || 0) >= (current.weight || 0) ? prev : current), exerciseLogs[0]);
+    }
+
+    return { 
+      ...ex, 
+      maxRep: maxRepLog.reps, 
+      maxRepDate: maxRepLog.date, 
+      maxWeight: maxWeightLog ? (maxWeightLog.weight || 0) : 0,
+      maxWeightDate: maxWeightLog ? maxWeightLog.date : null 
+    };
   }), [logs]);
 
   // --- Render Logic based on AppState ---
@@ -420,8 +462,25 @@ const App: React.FC = () => {
         <div className="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center mb-8 backdrop-blur-md animate-pulse">
           <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         </div>
-        <div className="text-center space-y-4 max-w-sm"><h1 className="text-3xl font-black">FitTrack Pro</h1><p className="text-indigo-100/80 text-sm font-medium leading-relaxed">{onboardingStep === 'id' ? "Enter a unique Profile ID to sync your data." : onboardingStep === 'email' ? "Link your account to an email." : "Enter your verification code."}</p></div>
+        <div className="text-center space-y-4 max-w-sm">
+          <h1 className="text-3xl font-black">FitTrack Pro</h1>
+          <p className="text-indigo-100/80 text-sm font-medium leading-relaxed">
+            {onboardingStep === 'welcome' ? "Track your workouts anywhere." : onboardingStep === 'id' ? "Enter a unique Profile ID to sync your data." : onboardingStep === 'email' ? "Link your account to an email." : "Enter your verification code."}
+          </p>
+        </div>
+        
         <div className="mt-12 w-full max-w-sm space-y-4">
+          {onboardingStep === 'welcome' && (
+            <div className="flex flex-col gap-4">
+              <button onClick={() => setOnboardingStep('id')} className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl">
+                Sync with Cloud
+              </button>
+              <button onClick={handleSkipAuth} className="w-full bg-indigo-500/50 text-indigo-100 py-5 rounded-2xl font-bold border-2 border-indigo-400/30 hover:bg-indigo-500/70">
+                Use Offline
+              </button>
+            </div>
+          )}
+
           {onboardingStep === 'id' && (<form onSubmit={handleCheckId} className="space-y-4"><input type="text" required value={idInput} onChange={e => setIdInput(e.target.value)} placeholder="Profile ID" className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-5 text-white placeholder-white/40 font-bold outline-none focus:border-white/60 text-center" /><button type="submit" className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl">Continue</button></form>)}
           {onboardingStep === 'email' && (<form onSubmit={handleRequestOtp} className="space-y-4"><input type="email" required value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="Email Address" className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-5 text-white placeholder-white/40 font-bold outline-none focus:border-white/60 text-center" /><button type="submit" disabled={resendTimer > 0} className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl disabled:opacity-50">{resendTimer > 0 ? `Wait ${resendTimer}s` : "Send Code"}</button></form>)}
           {onboardingStep === 'otp' && (<form onSubmit={handleVerifyOtp} className="space-y-4"><input type="text" inputMode="numeric" required value={otpInput} onChange={e => setOtpInput(e.target.value)} placeholder="000000" className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-5 text-white placeholder-white/40 font-bold outline-none focus:border-white/60 text-center tracking-widest text-4xl" /><button type="submit" className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl">Verify</button></form>)}
@@ -492,7 +551,33 @@ const App: React.FC = () => {
           </section>
           <section className="space-y-3">
             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">🏆 Personal Bests</h2>
-            <div className="grid grid-cols-1 gap-3">{maxStats.map(ex => (<div key={ex.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between"><div className="flex items-center gap-3"><div className={`w-12 h-12 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div><div><p className="font-bold text-slate-800">{ex.label}</p><p className="text-[10px] text-slate-400 uppercase font-bold">{ex.targetMuscle}</p></div></div><div className="flex gap-4"><div className="text-right"><p className="text-xl font-black text-indigo-600">{ex.maxRep}</p><p className="text-[8px] text-slate-400 uppercase font-bold">Reps</p></div>{ex.isWeighted && <div className="text-right border-l pl-4"><p className="text-xl font-black text-emerald-600">{ex.maxWeight}kg</p><p className="text-[8px] text-slate-400 uppercase font-bold">Weight</p></div>}</div></div>))}</div>
+            <div className="grid grid-cols-1 gap-3">
+              {maxStats.map(ex => (
+                <div key={ex.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div>
+                    <div>
+                      <p className="font-bold text-slate-800">{ex.label}</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">{ex.targetMuscle}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="text-right flex flex-col items-end">
+                       <p className="text-xl font-black text-indigo-600 leading-none">{ex.maxRep}</p>
+                       <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Reps</p>
+                       {ex.maxRepDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxRepDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxRepDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
+                    </div>
+                    {ex.isWeighted && (
+                       <div className="text-right border-l pl-4 flex flex-col items-end">
+                         <p className="text-xl font-black text-emerald-600 leading-none">{ex.maxWeight}kg</p>
+                         <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Weight</p>
+                         {ex.maxWeightDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxWeightDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxWeightDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
+                       </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </section>
         </div>
       )}
@@ -512,10 +597,23 @@ const App: React.FC = () => {
           <header className="text-center font-bold text-2xl text-slate-800">Settings</header>
           
           {/* Profile Card */}
-          <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-3"><div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-black text-lg">{profileId?.charAt(0).toUpperCase()}</div><div><p className="font-bold text-slate-800 truncate max-w-[150px]">{profileId}</p><p className="text-[10px] text-emerald-500 font-bold uppercase">Cloud Connected</p></div></div>
-            <button onClick={handleLogout} className="text-[10px] font-black text-slate-400 uppercase border-2 border-slate-50 px-4 py-2 rounded-xl hover:text-red-500">Sign Out</button>
-          </div>
+          {profileId ? (
+            <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-3"><div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-black text-lg">{profileId.charAt(0).toUpperCase()}</div><div><p className="font-bold text-slate-800 truncate max-w-[150px]">{profileId}</p><p className="text-[10px] text-emerald-500 font-bold uppercase">Cloud Connected</p></div></div>
+              <button onClick={handleLogout} className="text-[10px] font-black text-slate-400 uppercase border-2 border-slate-50 px-4 py-2 rounded-xl hover:text-red-500">Sign Out</button>
+            </div>
+          ) : (
+            <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
+               <div className="flex items-center gap-3">
+                 <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 font-black text-lg">G</div>
+                 <div>
+                   <p className="font-bold text-slate-800">Guest User</p>
+                   <p className="text-[10px] text-slate-400 font-bold uppercase">Local Storage Only</p>
+                 </div>
+               </div>
+               <button onClick={handleConnectCloud} className="text-[10px] font-black text-indigo-600 uppercase border-2 border-indigo-50 bg-indigo-50 px-4 py-2 rounded-xl hover:bg-indigo-100">Connect</button>
+            </div>
+          )}
 
           {/* Install App Button - Standalone Section */}
           <button onClick={handleInstallClick} className="w-full bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center gap-4 shadow-sm text-indigo-600 active:scale-95 transition-transform">

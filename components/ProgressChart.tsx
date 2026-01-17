@@ -1,6 +1,6 @@
 
-import React, { useMemo, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import React, { useMemo, useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { WorkoutLog, EXERCISES } from '../types';
 import { TimeFrame } from '../App';
 
@@ -11,8 +11,26 @@ interface ProgressChartProps {
 }
 
 const ProgressChart: React.FC<ProgressChartProps> = ({ logs }) => {
-  const [metric, setMetric] = useState<MetricType>('reps');
-  const [timeFrame, setTimeFrame] = useState<TimeFrame>('weekly');
+  // Initialize from local storage or default to 'reps'
+  const [metric, setMetric] = useState<MetricType>(() => {
+    return (localStorage.getItem('fit_chart_metric') as MetricType) || 'reps';
+  });
+  
+  // Initialize from local storage or default to 'weekly'
+  const [timeFrame, setTimeFrame] = useState<TimeFrame>(() => {
+    return (localStorage.getItem('fit_chart_timeframe') as TimeFrame) || 'weekly';
+  });
+
+  const [activeSeries, setActiveSeries] = useState<string | null>(null);
+
+  // Save preferences whenever they change
+  useEffect(() => {
+    localStorage.setItem('fit_chart_metric', metric);
+  }, [metric]);
+
+  useEffect(() => {
+    localStorage.setItem('fit_chart_timeframe', timeFrame);
+  }, [timeFrame]);
 
   const chartData = useMemo(() => {
     if (logs.length === 0) return [];
@@ -184,6 +202,35 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs }) => {
             ))}
           </div>
         </div>
+
+        {/* Interactive Legend - Moved to top, removed border */}
+        <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+          {EXERCISES.map(ex => {
+            const isActive = activeSeries === null || activeSeries === ex.id;
+            const isSelected = activeSeries === ex.id;
+            const color = getLineColor(ex.id);
+            
+            return (
+              <button
+                key={ex.id}
+                onClick={() => setActiveSeries(prev => prev === ex.id ? null : ex.id)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all ${
+                  isActive ? 'scale-100' : 'scale-95 opacity-40 grayscale'
+                }`}
+                style={{
+                  backgroundColor: isSelected ? `${color}15` : 'transparent',
+                  color: isActive ? color : '#94a3b8',
+                }}
+              >
+                <div 
+                  className={`w-2 h-2 rounded-full transition-colors ${isActive ? '' : 'bg-slate-300'}`}
+                  style={{ backgroundColor: isActive ? color : undefined }} 
+                />
+                {ex.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="w-full relative" style={{ height: '300px' }}>
@@ -221,26 +268,23 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs }) => {
                 return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
               }}
             />
-            <Legend 
-              iconType="circle" 
-              verticalAlign="top" 
-              align="right" 
-              wrapperStyle={{ paddingTop: '0px', paddingBottom: '20px', fontSize: '10px' }} 
-            />
-            {EXERCISES.map(ex => (
-              <Line 
-                key={ex.id}
-                type="monotone" 
-                dataKey={ex.id} 
-                name={ex.label}
-                stroke={getLineColor(ex.id)} 
-                strokeWidth={3}
-                dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}
-                activeDot={{ r: 6 }}
-                connectNulls={true}
-                isAnimationActive={false} // Disable animation to prevent layout thrashing on resize
-              />
-            ))}
+            {EXERCISES.map(ex => {
+              if (activeSeries && activeSeries !== ex.id) return null;
+              return (
+                <Line 
+                  key={ex.id}
+                  type="monotone" 
+                  dataKey={ex.id} 
+                  name={ex.label}
+                  stroke={getLineColor(ex.id)} 
+                  strokeWidth={3}
+                  dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}
+                  activeDot={{ r: 6 }}
+                  connectNulls={true}
+                  isAnimationActive={false} // Disable animation to prevent layout thrashing on resize
+                />
+              );
+            })}
           </LineChart>
         </ResponsiveContainer>
       </div>
