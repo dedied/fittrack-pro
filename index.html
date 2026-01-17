@@ -30,7 +30,6 @@
       background: #e2e8f0;
       border-radius: 10px;
     }
-    /* Prevent rubber banding on iOS */
     #root {
       height: 100%;
       width: 100%;
@@ -52,13 +51,27 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
   <div id="root"></div>
-  <script type="module" src="./index.tsx"></script>
+  <script type="module" src="index.tsx"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(err => {
-          console.log('ServiceWorker registration failed: ', err);
-        });
+        // Detect if we are on localhost or a local IP
+        const isLocalhost = Boolean(
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '[::1]' ||
+          window.location.hostname.match(/^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/)
+        );
+
+        // Don't register service worker on localhost to prevent dev cycle issues
+        if (!isLocalhost) {
+          navigator.serviceWorker.register('./sw.js').then(reg => {
+            console.log('SW Registered');
+            // Check for updates periodically
+            reg.update();
+          }).catch(err => {
+            console.log('SW registration failed: ', err);
+          });
+        }
       });
     }
   </script>

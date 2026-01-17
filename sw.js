@@ -1,28 +1,34 @@
-const CACHE_NAME = 'fittrack-v1.1.0';
-const ASSETS = [
+
+const CACHE_NAME = 'fittrack-v1.1.1';
+const ASSETS_TO_PRECACHE = [
   './',
   'index.html',
-  'manifest.json',
-  'https://cdn.tailwindcss.com',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+  'manifest.json'
 ];
 
+// On install, cache the core shell
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
+      return cache.addAll(ASSETS_TO_PRECACHE);
     })
   );
 });
 
+// On activate, clean up old caches and take control of clients immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))
-      );
-    })
+    Promise.all([
+      self.clients.claim(),
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames
+            .filter((name) => name !== CACHE_NAME)
+            .map((name) => caches.delete(name))
+        );
+      })
+    ])
   );
 });
 
@@ -30,40 +36,42 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // 1. Navigation requests (the page itself)
+  // 1. Handle Navigation (Loading the App)
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(() => {
-        // Fallback to the cached index.html only for navigation
+        // Only return index.html for page navigation requests
         return caches.match('index.html') || caches.match('./');
       })
     );
     return;
   }
 
-  // 2. Assets (JS, CSS, Images)
+  // 2. Handle Assets (JS, CSS, Images, ESM.sh imports)
   event.respondWith(
-    caches.match(request).then((response) => {
-      if (response) return response;
-      
+    caches.match(request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+
       return fetch(request).then((networkResponse) => {
         // Don't cache if not a successful response
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type === 'error') {
           return networkResponse;
         }
 
-        // Optional: Cache new assets on the fly
+        // Cache successful requests dynamically (includes esm.sh and other assets)
         const responseToCache = networkResponse.clone();
         caches.open(CACHE_NAME).then((cache) => {
-          // Only cache same-origin assets to be safe
-          if (url.origin === self.location.origin) {
+          // We cache assets from our origin and the esm.sh CDN
+          if (url.origin === self.location.origin || url.hostname.includes('esm.sh') || url.hostname.includes('fonts.')) {
             cache.put(request, responseToCache);
           }
         });
 
         return networkResponse;
       }).catch(() => {
-        // Fail silently for assets (do NOT return index.html for a .js request)
+        // Return nothing for failed asset requests (prevents returning HTML for JS)
         return null;
       });
     })
