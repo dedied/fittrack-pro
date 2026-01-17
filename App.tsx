@@ -20,6 +20,35 @@ const MAX_PIN_ATTEMPTS = 5;
 
 const generateId = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).substring(2)}`;
 
+// Helper to format a Date object into 'YYYY-MM-DDTHH:mm' for the datetime-local input
+const toDateTimeLocal = (date: Date) => {
+    const ten = (i: number) => (i < 10 ? '0' : '') + i;
+    const YYYY = date.getFullYear();
+    const MM = ten(date.getMonth() + 1);
+    const DD = ten(date.getDate());
+    const HH = ten(date.getHours());
+    const mm = ten(date.getMinutes());
+    return `${YYYY}-${MM}-${DD}T${HH}:${mm}`;
+};
+
+// Helper to format the display date for the button
+const formatEntryDate = (date: Date) => {
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    const timeFormat: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', hour12: true };
+    const timeString = date.toLocaleTimeString([], timeFormat);
+
+    if (isToday) return `Today, ${timeString}`;
+
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) return `Yesterday, ${timeString}`;
+    
+    const dateFormat: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric' };
+    return `${date.toLocaleDateString([], dateFormat)}, ${timeString}`;
+};
+
+
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('loading');
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -36,6 +65,7 @@ const App: React.FC = () => {
   const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinAttempts, setPinAttempts] = useState(MAX_PIN_ATTEMPTS);
@@ -69,6 +99,8 @@ const App: React.FC = () => {
   });
 
   const [newEntry, setNewEntry] = useState({ type: 'pushups' as ExerciseType, reps: '', weight: '' });
+  const [entryDate, setEntryDate] = useState(new Date());
+
 
   // Save totalsTimeFrame preference whenever it changes
   useEffect(() => {
@@ -532,13 +564,16 @@ const App: React.FC = () => {
     e.stopPropagation(); const repsNum = parseInt(newEntry.reps); if (isNaN(repsNum) || repsNum <= 0) return;
     const log: WorkoutLog = { 
         id: generateId(), 
-        date: new Date().toISOString(), 
+        date: entryDate.toISOString(), 
         type: newEntry.type, 
         reps: repsNum, 
         weight: parseFloat(newEntry.weight) || undefined, 
         owner_id: user?.id || undefined 
     };
-    if ('vibrate' in navigator) navigator.vibrate(25); setLogs(prev => [log, ...prev]); setNewEntry({ type: newEntry.type, reps: '', weight: '' });
+    if ('vibrate' in navigator) navigator.vibrate(25); 
+    setLogs(prev => [log, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())); 
+    setNewEntry({ type: newEntry.type, reps: '', weight: '' });
+    setEntryDate(new Date()); // Reset date to now for the next entry
     setToastMessage("✓ Logged!");
     if (supabase && user) {
       setSyncStatus('syncing'); 
@@ -547,6 +582,13 @@ const App: React.FC = () => {
     }
     setTimeout(() => { setToastMessage(null); setActiveTab('dashboard'); }, 1500);
   };
+  
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value) {
+      setEntryDate(new Date(e.target.value));
+    }
+  };
+
 
   const maxStats = useMemo(() => EXERCISES.map(ex => {
     const exerciseLogs = logs.filter(log => log.type === ex.id);
@@ -740,7 +782,26 @@ const App: React.FC = () => {
         )}
         {activeTab === 'add' && (
           <div className="space-y-6">
-            <div className="text-center font-bold text-slate-800 text-2xl">Record Set</div>
+            <div className="flex items-center justify-between">
+              <div className="w-16"></div> {/* Spacer */}
+              <h2 className="text-xl font-bold text-slate-800">Record Set</h2>
+              <button 
+                onClick={() => dateInputRef.current?.showPicker?.()} 
+                className="flex items-center gap-1.5 text-xs font-semibold bg-slate-100 text-slate-600 px-2 py-1.5 rounded-lg active:bg-slate-200"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                <span>{formatEntryDate(entryDate)}</span>
+              </button>
+              <input
+                type="datetime-local"
+                ref={dateInputRef}
+                onChange={handleDateChange}
+                className="sr-only"
+                aria-hidden="true"
+                value={toDateTimeLocal(entryDate)}
+              />
+            </div>
+
             <div className="space-y-2">{EXERCISES.map(ex => (<button key={ex.id} onClick={() => setNewEntry({ ...newEntry, type: ex.id })} className={`flex items-center gap-4 p-4 rounded-2xl border-2 w-full transition-all ${newEntry.type === ex.id ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 bg-white'}`}><div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div><div className="font-bold text-slate-800">{ex.label}</div></button>))}</div>
             <div className="grid grid-cols-2 gap-4">
               <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Reps</label><input type="number" inputMode="numeric" value={newEntry.reps} onChange={e => setNewEntry({...newEntry, reps: e.target.value})} placeholder="0" className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl focus:border-indigo-600 outline-none" /></div>
