@@ -42,6 +42,30 @@
     .toast-animate {
       animation: toast-in 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
     }
+    /* Custom Animations */
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes dialog-in {
+      from { opacity: 0; transform: scale(0.95) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .overlay-animate {
+      animation: fade-in 0.2s ease-out forwards;
+    }
+    .dialog-animate {
+      animation: dialog-in 0.2s cubic-bezier(0.2, 0, 0.2, 1) forwards;
+    }
+    @keyframes shake {
+      10%, 90% { transform: translateX(-1px); }
+      20%, 80% { transform: translateX(2px); }
+      30%, 50%, 70% { transform: translateX(-4px); }
+      40%, 60% { transform: translateX(4px); }
+    }
+    .animate-shake {
+      animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+    }
   </style>
 <script type="importmap">
 {

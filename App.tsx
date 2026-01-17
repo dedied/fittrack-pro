@@ -30,6 +30,7 @@ const App: React.FC = () => {
   });
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
   
   // History Drill Down State
   const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
@@ -327,26 +328,24 @@ const App: React.FC = () => {
     }
   };
 
-  const clearAllData = async () => {
-    if (window.confirm("Are you sure you want to clear all workout logs? This cannot be undone.")) {
-      
-      let cloudSuccess = true;
-
-      if (user && supabase) {
-        const { error } = await supabase.from('workouts').delete().neq('id', '_');
-        if (error) {
-          console.error("Cloud delete failed:", error);
-          alert(`Failed to delete cloud data: ${error.message}`);
-          cloudSuccess = false;
-        }
+  const handleConfirmClearData = async () => {
+    setShowClearDataConfirm(false);
+    
+    let cloudSuccess = true;
+    if (user && supabase) {
+      const { error } = await supabase.from('workouts').delete().neq('id', '_');
+      if (error) {
+        console.error("Cloud delete failed:", error);
+        alert(`Failed to delete cloud data: ${error.message}`);
+        cloudSuccess = false;
       }
-
-      setLogs([]); 
-      if ('vibrate' in navigator) navigator.vibrate([50, 50, 50]);
-      
-      setToastMessage(cloudSuccess ? "All data cleared" : "Local cleared (Cloud failed)");
-      setTimeout(() => setToastMessage(null), 3000);
     }
+
+    setLogs([]);
+    if ('vibrate' in navigator) navigator.vibrate([50, 50, 50]);
+    
+    setToastMessage(cloudSuccess ? "All data cleared" : "Local cleared (Cloud failed)");
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
   const handleExportCSV = () => {
@@ -356,7 +355,7 @@ const App: React.FC = () => {
     }
     const headers = ["Date", "Type", "Reps", "Weight (kg)"];
     const rows = logs.map(log => [
-      `"${new Date(log.date).toLocaleString()}"`,
+      new Date(log.date).toISOString(),
       log.type,
       log.reps,
       log.weight || ''
@@ -372,26 +371,131 @@ const App: React.FC = () => {
   };
 
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string; if (!text) return; const newLogs: WorkoutLog[] = [];
-      text.split('\n').forEach((line, index) => {
-        if (!line.trim() || (index === 0 && (line.toLowerCase().includes('date')))) return;
-        const [dateStr, typeStr, repsStr, weightStr] = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
-        if (dateStr && typeStr && repsStr) {
-          newLogs.push({ 
-            id: generateId(), 
-            date: new Date(dateStr).toISOString(), 
-            type: typeStr as ExerciseType, 
-            reps: parseInt(repsStr) || 0, 
-            weight: weightStr ? parseFloat(weightStr) : undefined, 
-            owner_id: user?.id || undefined 
-          });
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Helper to parse a CSV line, handling a quoted first field (for dates from Excel).
+    const parseCsvLine = (line: string): string[] => {
+        const trimmedLine = line.trim();
+        if (trimmedLine.startsWith('"')) {
+            // Find the closing quote for the first field
+            const endIndex = trimmedLine.indexOf('",');
+            if (endIndex !== -1) {
+                const firstField = trimmedLine.substring(1, endIndex);
+                const rest = trimmedLine.substring(endIndex + 2);
+                return [firstField, ...rest.split(',')].map(s => s.trim());
+            }
         }
-      });
-      if (newLogs.length > 0) { setLogs(prev => [...newLogs, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())); alert(`Imported ${newLogs.length} logs!`); }
+        // Fallback for unquoted lines
+        return trimmedLine.split(',').map(s => s.trim());
     };
-    reader.readAsText(file); if (fileInputRef.current) fileInputRef.current.value = '';
+
+    // Helper to parse various common date formats.
+    const parseDateString = (dateStr: string): Date | null => {
+        if (!dateStr) return null;
+
+        // 1. Try standard ISO 8601 format (what the app exports) first.
+        let date = new Date(dateStr);
+        if (!isNaN(date.getTime())) {
+            return date;
+        }
+
+        // 2. Try "DD/MM/YYYY, HH:MM:SS" format (common in European locales after Excel).
+        const matchDateTime = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/);
+        if (matchDateTime) {
+            const [, day, month, year, hour, minute, second] = matchDateTime.map(Number);
+            date = new Date(year, month - 1, day, hour, minute, second); // JS month is 0-indexed
+            if (!isNaN(date.getTime())) {
+                return date;
+            }
+        }
+        
+        // 3. Try "DD/MM/YYYY" format as a fallback.
+        const matchDate = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (matchDate) {
+            const [, day, month, year] = matchDate.map(Number);
+            date = new Date(year, month - 1, day);
+            if (!isNaN(date.getTime())) {
+                return date;
+            }
+        }
+        
+        console.warn("Could not parse date format:", dateStr);
+        return null;
+    };
+
+
+    const reader = new FileReader();
+
+    reader.onerror = () => {
+      setToastMessage('Error reading file.');
+      setTimeout(() => setToastMessage(null), 3000);
+    };
+
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) {
+          throw new Error("File is empty.");
+        }
+
+        const newLogs: WorkoutLog[] = [];
+        const validTypes = new Set(EXERCISES.map(ex => ex.id));
+        const lines = text.split('\n');
+        
+        lines.forEach((line, index) => {
+          if (!line.trim() || (index === 0 && line.toLowerCase().includes('date'))) {
+            return;
+          }
+          
+          const fields = parseCsvLine(line);
+          
+          if (fields.length < 3) {
+             if (line.trim()) { // Don't warn for empty lines
+                console.warn(`Skipping invalid line during import (not enough fields on line ${index + 1}):`, line);
+             }
+             return;
+          }
+
+          const [dateStr, typeStr, repsStr, weightStr] = fields;
+          
+          const date = parseDateString(dateStr);
+          const type = typeStr as ExerciseType;
+          const reps = parseInt(repsStr, 10);
+
+          if (date && !isNaN(date.getTime()) && type && validTypes.has(type) && repsStr && !isNaN(reps) && reps > 0) {
+            newLogs.push({
+              id: generateId(),
+              date: date.toISOString(),
+              type: type,
+              reps: reps,
+              weight: (weightStr && !isNaN(parseFloat(weightStr))) ? parseFloat(weightStr) : undefined,
+              owner_id: user?.id || undefined,
+            });
+          } else {
+            console.warn(`Skipping invalid line during import (line ${index + 1}):`, line);
+          }
+        });
+
+        if (newLogs.length > 0) {
+          setLogs(prev => [...newLogs, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+          setToastMessage(`✓ Imported ${newLogs.length} logs!`);
+        } else {
+          setToastMessage('No valid logs found in file.');
+        }
+
+      } catch (err) {
+        console.error("Import failed:", err);
+        setToastMessage('Import failed. Check file format.');
+      } finally {
+        setTimeout(() => setToastMessage(null), 3000);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      }
+    };
+
+    reader.readAsText(file);
   };
 
   useEffect(() => { const h = (e: any) => { e.preventDefault(); setDeferredPrompt(e); }; window.addEventListener('beforeinstallprompt', h); return () => window.removeEventListener('beforeinstallprompt', h); }, []);
@@ -580,137 +684,158 @@ const App: React.FC = () => {
   }
 
   return (
-    <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus}>
-      {activeTab === 'dashboard' && (
-        <div className="space-y-6">
-          <ProgressChart logs={logs} />
-          <section className="space-y-3">
-            <div className="flex items-center justify-between ml-1">
-              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Period Totals</h2>
-              <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">{(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map(tf => (<button key={tf} onClick={() => setTotalsTimeFrame(tf)} className={`px-2 py-1 text-[9px] font-bold uppercase rounded-lg ${totalsTimeFrame === tf ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>{tf.charAt(0)}</button>))}</div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">{filteredStats.map(ex => (
-              <div 
-                key={ex.id} 
-                onClick={() => setViewingHistory(ex.id)}
-                className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center cursor-pointer active:scale-95 transition-transform hover:border-indigo-100"
-              >
-                <div className="mb-2">{ex.icon}</div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase text-center">{ex.label}</span>
-                <span className="text-xl font-bold text-slate-800">{ex.totalReps}</span>
+    <>
+      <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus}>
+        {activeTab === 'dashboard' && (
+          <div className="space-y-6">
+            <ProgressChart logs={logs} />
+            <section className="space-y-3">
+              <div className="flex items-center justify-between ml-1">
+                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Period Totals</h2>
+                <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">{(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map(tf => (<button key={tf} onClick={() => setTotalsTimeFrame(tf)} className={`px-2 py-1 text-[9px] font-bold uppercase rounded-lg ${totalsTimeFrame === tf ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>{tf.charAt(0)}</button>))}</div>
               </div>
-            ))}</div>
-          </section>
-          <section className="space-y-3">
-            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">🏆 Personal Bests</h2>
-            <div className="grid grid-cols-1 gap-3">
-              {maxStats.map(ex => (
-                <div key={ex.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div>
-                    <div>
-                      <p className="font-bold text-slate-800">{ex.label}</p>
-                      <p className="text-[10px] text-slate-400 uppercase font-bold">{ex.targetMuscle}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4">
-                    <div className="text-right flex flex-col items-end">
-                       <p className="text-xl font-black text-indigo-600 leading-none">{ex.maxRep}</p>
-                       <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Reps</p>
-                       {ex.maxRepDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxRepDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxRepDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
-                    </div>
-                    {ex.isWeighted && (
-                       <div className="text-right border-l pl-4 flex flex-col items-end">
-                         <p className="text-xl font-black text-emerald-600 leading-none">{ex.maxWeight}kg</p>
-                         <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Weight</p>
-                         {ex.maxWeightDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxWeightDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxWeightDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
-                       </div>
-                    )}
-                  </div>
+              <div className="grid grid-cols-3 gap-3">{filteredStats.map(ex => (
+                <div 
+                  key={ex.id} 
+                  onClick={() => setViewingHistory(ex.id)}
+                  className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center cursor-pointer active:scale-95 transition-transform hover:border-indigo-100"
+                >
+                  <div className="mb-2">{ex.icon}</div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase text-center">{ex.label}</span>
+                  <span className="text-xl font-bold text-slate-800">{ex.totalReps}</span>
                 </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      )}
-      {activeTab === 'add' && (
-        <div className="space-y-6">
-          <div className="text-center font-bold text-slate-800 text-2xl">Record Set</div>
-          <div className="space-y-2">{EXERCISES.map(ex => (<button key={ex.id} onClick={() => setNewEntry({ ...newEntry, type: ex.id })} className={`flex items-center gap-4 p-4 rounded-2xl border-2 w-full transition-all ${newEntry.type === ex.id ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 bg-white'}`}><div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div><div className="font-bold text-slate-800">{ex.label}</div></button>))}</div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Reps</label><input type="number" inputMode="numeric" value={newEntry.reps} onChange={e => setNewEntry({...newEntry, reps: e.target.value})} placeholder="0" className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl focus:border-indigo-600 outline-none" /></div>
-            <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Weight (kg)</label><input type="number" inputMode="decimal" value={newEntry.weight} onChange={e => setNewEntry({...newEntry, weight: e.target.value})} placeholder="0" disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl focus:border-indigo-600 outline-none" /></div>
+              ))}</div>
+            </section>
+            <section className="space-y-3">
+              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">🏆 Personal Bests</h2>
+              <div className="grid grid-cols-1 gap-3">
+                {maxStats.map(ex => (
+                  <div key={ex.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div>
+                      <div>
+                        <p className="font-bold text-slate-800">{ex.label}</p>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold">{ex.targetMuscle}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="text-right flex flex-col items-end">
+                         <p className="text-xl font-black text-indigo-600 leading-none">{ex.maxRep}</p>
+                         <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Reps</p>
+                         {ex.maxRepDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxRepDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxRepDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
+                      </div>
+                      {ex.isWeighted && (
+                         <div className="text-right border-l pl-4 flex flex-col items-end">
+                           <p className="text-xl font-black text-emerald-600 leading-none">{ex.maxWeight}kg</p>
+                           <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Weight</p>
+                           {ex.maxWeightDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxWeightDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxWeightDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
+                         </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
-          <button onClick={handleAddLog} disabled={!newEntry.reps || parseInt(newEntry.reps) <= 0 || !!toastMessage} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg">{toastMessage === '✓ Logged!' ? 'SAVED! ✨' : 'SAVE SET'}</button>
-        </div>
-      )}
-      {activeTab === 'settings' && (
-        <div className="space-y-6">
-          <header className="text-center font-bold text-2xl text-slate-800">Settings</header>
-          
-          {/* Profile Card */}
-          {user ? (
-            <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
-              <div className="flex items-center gap-3"><div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-black text-lg">{user.email?.charAt(0).toUpperCase()}</div><div><p className="font-bold text-slate-800 truncate max-w-[150px]">{user.email}</p><p className="text-[10px] text-emerald-500 font-bold uppercase">Cloud Connected</p></div></div>
-              <button onClick={handleLogout} className="text-[10px] font-black text-slate-400 uppercase border-2 border-slate-50 px-4 py-2 rounded-xl hover:text-red-500">Sign Out</button>
+        )}
+        {activeTab === 'add' && (
+          <div className="space-y-6">
+            <div className="text-center font-bold text-slate-800 text-2xl">Record Set</div>
+            <div className="space-y-2">{EXERCISES.map(ex => (<button key={ex.id} onClick={() => setNewEntry({ ...newEntry, type: ex.id })} className={`flex items-center gap-4 p-4 rounded-2xl border-2 w-full transition-all ${newEntry.type === ex.id ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 bg-white'}`}><div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div><div className="font-bold text-slate-800">{ex.label}</div></button>))}</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Reps</label><input type="number" inputMode="numeric" value={newEntry.reps} onChange={e => setNewEntry({...newEntry, reps: e.target.value})} placeholder="0" className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl focus:border-indigo-600 outline-none" /></div>
+              <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Weight (kg)</label><input type="number" inputMode="decimal" value={newEntry.weight} onChange={e => setNewEntry({...newEntry, weight: e.target.value})} placeholder="0" disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl focus:border-indigo-600 outline-none" /></div>
             </div>
-          ) : (
-            <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
-               <div className="flex items-center gap-3">
-                 <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 font-black text-lg">G</div>
-                 <div>
-                   <p className="font-bold text-slate-800">Guest User</p>
-                   <p className="text-[10px] text-slate-400 font-bold uppercase">Local Storage Only</p>
-                 </div>
-               </div>
-               <button onClick={handleConnectCloud} className="text-[10px] font-black text-indigo-600 uppercase border-2 border-indigo-50 bg-indigo-50 px-4 py-2 rounded-xl hover:bg-indigo-100">Connect</button>
-            </div>
-          )}
-
-          {/* Install App Button - Standalone Section */}
-          <button onClick={handleInstallClick} className="w-full bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center gap-4 shadow-sm text-indigo-600 active:scale-95 transition-transform">
-             <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center">
-               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-             </div>
-             <div className="text-left flex-1">
-               <p className="font-bold text-lg text-slate-800">Install App</p>
-               <p className="text-[10px] font-bold uppercase text-slate-400">Add to Home Screen</p>
-             </div>
-             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-          </button>
-
-          {/* Main Settings List */}
-          <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
-            <button onClick={hasBiometrics ? handleDisableSecurity : handleEnableSecurity} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasBiometrics ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
-                {hasBiometrics ? (
-                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                ) : (
-                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                )}
-              </div>
-              <div className="text-left flex-1 font-bold">
-                {hasBiometrics ? "Disable App Lock" : "Enable App Lock & Biometrics"}
-              </div>
-              {!hasBiometrics && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>}
-            </button>
+            <button onClick={handleAddLog} disabled={!newEntry.reps || parseInt(newEntry.reps) <= 0 || !!toastMessage} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg">{toastMessage === '✓ Logged!' ? 'SAVED! ✨' : 'SAVE SET'}</button>
+          </div>
+        )}
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            <header className="text-center font-bold text-2xl text-slate-800">Settings</header>
             
-            {hasBiometrics && (
-              <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
-                 <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div>
-                 <div className="text-left flex-1 font-bold">Change PIN</div>
-              </button>
+            {/* Profile Card */}
+            {user ? (
+              <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3"><div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-black text-lg">{user.email?.charAt(0).toUpperCase()}</div><div><p className="font-bold text-slate-800 truncate max-w-[150px]">{user.email}</p><p className="text-[10px] text-emerald-500 font-bold uppercase">Cloud Connected</p></div></div>
+                <button onClick={handleLogout} className="text-[10px] font-black text-slate-400 uppercase border-2 border-slate-50 px-4 py-2 rounded-xl hover:text-red-500">Sign Out</button>
+              </div>
+            ) : (
+              <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
+                 <div className="flex items-center gap-3">
+                   <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 font-black text-lg">G</div>
+                   <div>
+                     <p className="font-bold text-slate-800">Guest User</p>
+                     <p className="text-[10px] text-slate-400 font-bold uppercase">Local Storage Only</p>
+                   </div>
+                 </div>
+                 <button onClick={handleConnectCloud} className="text-[10px] font-black text-indigo-600 uppercase border-2 border-indigo-50 bg-indigo-50 px-4 py-2 rounded-xl hover:bg-indigo-100">Connect</button>
+              </div>
             )}
 
-            <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
-            <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
-            <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
-            <button onClick={clearAllData} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
+            {/* Install App Button - Standalone Section */}
+            <button onClick={handleInstallClick} className="w-full bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center gap-4 shadow-sm text-indigo-600 active:scale-95 transition-transform">
+               <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center">
+                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+               </div>
+               <div className="text-left flex-1">
+                 <p className="font-bold text-lg text-slate-800">Install App</p>
+                 <p className="text-[10px] font-bold uppercase text-slate-400">Add to Home Screen</p>
+               </div>
+               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+
+            {/* Main Settings List */}
+            <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
+              <button onClick={hasBiometrics ? handleDisableSecurity : handleEnableSecurity} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasBiometrics ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
+                  {hasBiometrics ? (
+                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  ) : (
+                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  )}
+                </div>
+                <div className="text-left flex-1 font-bold">
+                  {hasBiometrics ? "Disable App Lock" : "Enable App Lock & Biometrics"}
+                </div>
+                {!hasBiometrics && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>}
+              </button>
+              
+              {hasBiometrics && (
+                <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
+                   <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div>
+                   <div className="text-left flex-1 font-bold">Change PIN</div>
+                </button>
+              )}
+
+              <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
+              <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
+              <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
+              <button onClick={() => setShowClearDataConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
+            </div>
+          </div>
+        )}
+      </Layout>
+      
+      {/* Confirmation Dialog */}
+      {showClearDataConfirm && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm overlay-animate" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-description">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center dialog-animate">
+            <h2 id="dialog-title" className="text-xl font-black text-slate-800">Are you sure?</h2>
+            <p id="dialog-description" className="text-slate-500 mt-2 text-sm">This will permanently delete all your workout logs. This action cannot be undone.</p>
+            <div className="mt-6 flex gap-3">
+              <button onClick={() => setShowClearDataConfirm(false)} className="flex-1 bg-slate-100 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleConfirmClearData} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors">
+                Confirm Delete
+              </button>
+            </div>
           </div>
         </div>
       )}
+
       {toastMessage && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-3 shadow-2xl toast-animate">{toastMessage}</div>}
-    </Layout>
+    </>
   );
 };
 
