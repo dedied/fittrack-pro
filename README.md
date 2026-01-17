@@ -63,4 +63,48 @@ CREATE POLICY workouts_owner ON public.workouts
   FOR ALL
   USING (auth.uid() = owner_id)
   WITH CHECK (auth.uid() = owner_id);
+  
+------------------------------------------------------------
+-- SECURE DELETE USER FUNCTION
+-- Safely deletes ONLY the currently authenticated user
+-- and cascades all dependent data (e.g., workouts)
+------------------------------------------------------------
+
+create or replace function public.delete_user()
+returns void
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  uid uuid;
+begin
+  -- Ensure the caller is authenticated
+  uid := auth.uid();
+  if uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  -- Delete the user from auth.users
+  -- ON DELETE CASCADE will remove dependent rows (e.g., workouts)
+  delete from auth.users
+  where id = uid;
+
+end;
+$$;
+
+------------------------------------------------------------
+-- IMPORTANT: Restrict function ownership
+-- Prevents privilege escalation if the function is ever modified
+------------------------------------------------------------
+alter function public.delete_user() owner to authenticated;
+
+------------------------------------------------------------
+-- OPTIONAL: Restrict who can execute the function
+-- (By default, only authenticated users should be allowed)
+------------------------------------------------------------
+revoke all on function public.delete_user() from public;
+grant execute on function public.delete_user() to authenticated;
+
+
 ```

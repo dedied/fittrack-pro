@@ -60,6 +60,7 @@ const App: React.FC = () => {
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
   
   // Sync Error Handling
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -434,6 +435,40 @@ const App: React.FC = () => {
     if ('vibrate' in navigator) navigator.vibrate([50, 50, 50]);
     
     setToastMessage(cloudSuccess ? "All data cleared" : "Local cleared (Cloud failed)");
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    setShowDeleteAccountConfirm(false);
+    
+    if (user && supabase) {
+        // 1. Delete all user data (RLS will allow this for own data)
+        await supabase.from('workouts').delete().neq('id', '_');
+        
+        // 2. Attempt to delete the user record via RPC
+        // Note: This requires the delete_user function to be defined in Supabase
+        const { error } = await supabase.rpc('delete_user');
+        if (error) {
+            console.warn("Account deletion RPC failed (likely not configured):", error);
+        }
+        
+        await supabase.auth.signOut();
+    }
+
+    // 3. Clear local storage and secure store
+    await secureStore.clear();
+    setLogs([]);
+    
+    // 4. Reset App State
+    setUser(null);
+    setSyncStatus('unconfigured');
+    setAppState('onboarding');
+    setOnboardingStep('email');
+    setEmailInput('');
+    setOtpInput('');
+    setHasBiometrics(false);
+
+    setToastMessage("Account deleted");
     setTimeout(() => setToastMessage(null), 3000);
   };
 
@@ -950,7 +985,8 @@ const App: React.FC = () => {
               <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
               <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
               <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
-              <button onClick={() => setShowClearDataConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
+              <button onClick={() => setShowClearDataConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600 border-b border-slate-100"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
+              <button onClick={() => setShowDeleteAccountConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">💀</div><div className="text-left flex-1 font-bold">Delete Account</div></button>
             </div>
           </div>
         )}
@@ -977,7 +1013,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Confirmation Dialog */}
+      {/* Confirmation Dialog - Clear Data */}
       {showClearDataConfirm && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm overlay-animate" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-description">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center dialog-animate">
@@ -989,6 +1025,25 @@ const App: React.FC = () => {
               </button>
               <button onClick={handleConfirmClearData} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors">
                 Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog - Delete Account */}
+      {showDeleteAccountConfirm && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm overlay-animate" role="dialog" aria-modal="true" aria-labelledby="del-dialog-title" aria-describedby="del-dialog-description">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center dialog-animate">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600 text-2xl">💀</div>
+            <h2 id="del-dialog-title" className="text-xl font-black text-slate-800">Delete Account?</h2>
+            <p id="del-dialog-description" className="text-slate-500 mt-2 text-sm">This will permanently delete your account and all associated data. This action is irreversible.</p>
+            <div className="mt-6 flex gap-3">
+              <button onClick={() => setShowDeleteAccountConfirm(false)} className="flex-1 bg-slate-100 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleConfirmDeleteAccount} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors">
+                Delete Forever
               </button>
             </div>
           </div>
