@@ -28,10 +28,13 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
 
+  // CONFIGURATION: PIN LENGTH
+  const PIN_LENGTH = 4;
+
   useEffect(() => {
     if (isCreating) {
       setTitle(isConfirming ? "Confirm PIN" : "Create a PIN");
-      setSubtitle(isConfirming ? "Enter the same PIN again to confirm." : "Secure your session with a 6-digit PIN.");
+      setSubtitle(isConfirming ? "Enter the same PIN again to confirm." : `Secure your session with a ${PIN_LENGTH}-digit PIN.`);
     } else {
       setTitle("Enter PIN");
       setSubtitle("Unlock your session.");
@@ -40,9 +43,9 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({
   
   const handleKeyPress = useCallback((key: string) => {
     if (isConfirming) {
-      if (confirmPin.length < 6) setConfirmPin(p => p + key);
+      if (confirmPin.length < PIN_LENGTH) setConfirmPin(p => p + key);
     } else {
-      if (pin.length < 6) setPin(p => p + key);
+      if (pin.length < PIN_LENGTH) setPin(p => p + key);
     }
   }, [pin, confirmPin, isConfirming]);
   
@@ -53,15 +56,15 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({
 
   useEffect(() => {
     const processPin = async () => {
-      if (!isCreating && pin.length === 6) {
+      if (!isCreating && pin.length === PIN_LENGTH) {
         if (onPinEnter) onPinEnter(pin);
         // Clear pin after attempt for security
         setTimeout(() => setPin(''), 200);
       }
-      if (isCreating && !isConfirming && pin.length === 6) {
+      if (isCreating && !isConfirming && pin.length === PIN_LENGTH) {
         setIsConfirming(true);
       }
-      if (isCreating && isConfirming && confirmPin.length === 6) {
+      if (isCreating && isConfirming && confirmPin.length === PIN_LENGTH) {
         if (pin === confirmPin) {
           if (onPinCreate) onPinCreate(pin);
         } else {
@@ -88,7 +91,7 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({
 
   const PinDots = ({ length }: { length: number }) => (
     <div className="flex gap-4">
-      {Array.from({ length: 6 }).map((_, i) => (
+      {Array.from({ length: PIN_LENGTH }).map((_, i) => (
         <div key={i} className={`w-4 h-4 rounded-full transition-all ${i < length ? 'bg-white' : 'bg-white/20'}`} />
       ))}
     </div>

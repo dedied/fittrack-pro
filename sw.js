@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'fittrack-v1.9.1';
+const CACHE_NAME = 'fittrack-v1.9.2';
 
 // We determine the base path dynamically or use relative paths
 const ASSETS_TO_PRECACHE = [
@@ -36,11 +36,17 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // For navigation requests, try network first, then cache, then fallback to index.html
+  // For navigation requests, assume it's the SPA index.html
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(() => {
-        return caches.match('./index.html') || caches.match('./');
+        // Fallback to cached index.html
+        // We use ignoreSearch to match requests regardless of query params
+        return caches.match('./index.html', { ignoreSearch: true })
+          .then(response => {
+             // If ./index.html path fails to match, try matching the scope root
+             return response || caches.match('./', { ignoreSearch: true });
+          });
       })
     );
     return;
@@ -48,7 +54,7 @@ self.addEventListener('fetch', (event) => {
 
   // For other assets, use Cache-First strategy
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
+    caches.match(request, { ignoreSearch: true }).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
       return fetch(request).then((networkResponse) => {
         if (!networkResponse || networkResponse.status !== 200 || networkResponse.type === 'error') {
@@ -61,7 +67,7 @@ self.addEventListener('fetch', (event) => {
             try {
               cache.put(request, responseToCache);
             } catch (e) {
-              // Ignore cache put errors (e.g. for chrome-extension://)
+              // Ignore cache put errors
             }
           }
         });

@@ -284,6 +284,27 @@ const App: React.FC = () => {
     }
   };
 
+  const handleExportCSV = () => {
+    if (logs.length === 0) {
+      alert("No data to export!");
+      return;
+    }
+    const headers = "Date,Type,Reps,Weight (kg)";
+    const rows = logs.map(log => 
+      `${new Date(log.date).toLocaleString()},${log.type},${log.reps},${log.weight || ''}`
+    );
+    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].join("\n");
+    
+    // Create download link
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `fittrack_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader();
     reader.onload = (event) => {
@@ -422,8 +443,9 @@ const App: React.FC = () => {
             </button>
             <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div><div className="text-left flex-1 font-bold">Change PIN</div></button>
             <button onClick={handleInstallClick} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-indigo-600"><div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">📱</div><div className="text-left flex-1 font-bold">Install App</div></button>
-            <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Import Data</div></button>
+            <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
             <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
+            <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
             <button onClick={clearAllData} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
           </div>
         </div>
