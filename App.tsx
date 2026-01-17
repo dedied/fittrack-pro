@@ -15,6 +15,7 @@ const generateId = () => {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [totalsTimeFrame, setTotalsTimeFrame] = useState<TimeFrame>('weekly');
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -35,6 +36,10 @@ const App: React.FC = () => {
     reps: '',
     weight: ''
   });
+
+  const isIOS = useMemo(() => {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('fit_logs', JSON.stringify(logs));
@@ -65,11 +70,18 @@ const App: React.FC = () => {
   }, []);
 
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
+    if (isInstalled) return;
+
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else if (isIOS) {
+      setShowInstallGuide(true);
+    } else {
+      alert("To install: Open this site in Chrome or Safari, then select 'Add to Home Screen' from the menu.");
     }
   };
 
@@ -313,12 +325,27 @@ const App: React.FC = () => {
         <div className="space-y-6 animate-in fade-in duration-300">
           <header className="text-center"><h2 className="text-2xl font-bold text-slate-800 tracking-tight">Settings</h2></header>
           <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-            {deferredPrompt && <button onClick={handleInstallClick} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-indigo-600 transition-colors">
-              <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center shrink-0 text-indigo-600">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            
+            {/* Permanent Install Option */}
+            <button 
+              onClick={handleInstallClick} 
+              className={`w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold transition-all ${isInstalled ? 'text-emerald-600' : 'text-indigo-600'}`}
+            >
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isInstalled ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                {isInstalled ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                )}
               </div>
-              <div className="text-left"><p className="font-bold">Install FitTrack Pro</p><p className="text-[10px] text-slate-400 uppercase tracking-wide">Add to home screen</p></div>
-            </button>}
+              <div className="text-left">
+                <p className="font-bold">{isInstalled ? 'App Installed' : 'Install FitTrack Pro'}</p>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">
+                  {isInstalled ? 'Running in App Mode' : 'Add to home screen'}
+                </p>
+              </div>
+            </button>
+
             <button onClick={exportToCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800 transition-colors">
               <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -339,7 +366,42 @@ const App: React.FC = () => {
               <div className="text-left"><p className="font-bold">Clear Data</p><p className="text-[10px] text-red-400 uppercase tracking-wide">Wipe all logs</p></div>
             </button>
           </div>
-          <div className="text-center opacity-30"><p className="text-[10px] uppercase font-black tracking-widest text-slate-500">FitTrack Pro v1.1.0</p></div>
+          <div className="text-center opacity-30"><p className="text-[10px] uppercase font-black tracking-widest text-slate-500">FitTrack Pro v1.1.2</p></div>
+        </div>
+      )}
+
+      {/* iOS Install Guide Modal */}
+      {showInstallGuide && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300" onClick={() => setShowInstallGuide(false)}>
+          <div className="bg-white w-full max-w-md rounded-[32px] p-8 space-y-6 shadow-2xl animate-in slide-in-from-bottom-10" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-2xl font-black text-slate-800">Install FitTrack</h3>
+                <p className="text-slate-500 text-sm">Add this app to your home screen for quick access and offline use.</p>
+              </div>
+              <button onClick={() => setShowInstallGuide(false)} className="bg-slate-100 p-2 rounded-full text-slate-400">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl">
+                <div className="w-10 h-10 bg-white shadow-sm rounded-xl flex items-center justify-center text-indigo-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                </div>
+                <p className="text-sm font-bold text-slate-700 flex-1">1. Tap the <span className="text-indigo-600">Share</span> button at the bottom of your browser.</p>
+              </div>
+
+              <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl">
+                <div className="w-10 h-10 bg-white shadow-sm rounded-xl flex items-center justify-center text-indigo-600 font-bold text-xl">+</div>
+                <p className="text-sm font-bold text-slate-700 flex-1">2. Scroll down and select <span className="text-indigo-600">"Add to Home Screen"</span>.</p>
+              </div>
+            </div>
+
+            <button onClick={() => setShowInstallGuide(false)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all">
+              Got it
+            </button>
+          </div>
         </div>
       )}
     </Layout>
