@@ -4,9 +4,15 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: './', // Crucial for GitHub Pages subdirectories
+  base: './', // Ensures assets are loaded correctly on GitHub Pages
   build: {
     outDir: 'dist',
-    sourcemap: true
-  }
+    assetsDir: 'assets',
+    sourcemap: false,
+    rollupOptions: {
+      input: {
+        main: './index.html',
+      },
+    },
+  },
 });
