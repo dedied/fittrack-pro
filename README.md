@@ -18,23 +18,12 @@ Built with React, Vite, and Tailwind CSS, it offers a seamless native-like exper
 To enable cloud syncing, set up a Supabase project and run the following SQL query in the **SQL Editor** to create the necessary tables and security policies.
 
 ```sql
--- Drop existing tables (order matters because of FK constraints)
+-- Drop existing tables
 DROP TABLE IF EXISTS public.workouts;
-DROP TABLE IF EXISTS public.profiles;
+DROP TABLE IF EXISTS public.profiles; -- Legacy table cleanup
 
 ------------------------------------------------------------
--- 1. PROFILES TABLE (linked to auth.users)
-------------------------------------------------------------
-CREATE TABLE public.profiles (
-  id TEXT PRIMARY KEY,                         -- Profile ID
-  owner_id UUID NOT NULL UNIQUE                -- Auth user ID
-    REFERENCES auth.users (id) ON DELETE CASCADE,
-  email TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-------------------------------------------------------------
--- 2. WORKOUTS TABLE (linked to profiles.id)
+-- 1. WORKOUTS TABLE (linked directly to auth.users)
 ------------------------------------------------------------
 CREATE TABLE public.workouts (
   id TEXT PRIMARY KEY,
@@ -42,61 +31,24 @@ CREATE TABLE public.workouts (
   type TEXT NOT NULL,
   reps INTEGER NOT NULL,
   weight FLOAT,
-  user_id TEXT NOT NULL
-    REFERENCES public.profiles (id) ON DELETE CASCADE
+  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
 );
 
 ------------------------------------------------------------
--- 3. ENABLE ROW LEVEL SECURITY
+-- 2. ENABLE ROW LEVEL SECURITY
 ------------------------------------------------------------
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workouts ENABLE ROW LEVEL SECURITY;
 
 ------------------------------------------------------------
--- 4. PROFILES POLICIES
+-- 3. WORKOUTS POLICIES
 ------------------------------------------------------------
 
--- Insert: user can create their own profile
-CREATE POLICY profiles_insert ON public.profiles
-  FOR INSERT
-  WITH CHECK (auth.uid() = owner_id);
-
--- Select: user can read their own profile
-CREATE POLICY profiles_select ON public.profiles
-  FOR SELECT
-  USING (auth.uid() = owner_id);
-
--- Update: user can update their own profile
-CREATE POLICY profiles_update ON public.profiles
-  FOR UPDATE
-  USING (auth.uid() = owner_id);
-
--- Delete: optional but recommended
-CREATE POLICY profiles_delete ON public.profiles
-  FOR DELETE
-  USING (auth.uid() = owner_id);
-
-------------------------------------------------------------
--- 5. WORKOUTS POLICIES
-------------------------------------------------------------
-
--- One unified policy for all operations
+-- Unified policy: Users can only CRUD their own data
 CREATE POLICY workouts_owner ON public.workouts
   FOR ALL
-  USING (
-    auth.uid() = (
-      SELECT owner_id
-      FROM public.profiles
-      WHERE profiles.id = workouts.user_id
-    )
-  )
-  WITH CHECK (
-    auth.uid() = (
-      SELECT owner_id
-      FROM public.profiles
-      WHERE profiles.id = workouts.user_id
-    )
-  );
+  USING (auth.uid() = owner_id)
+  WITH CHECK (auth.uid() = owner_id);
+
 ```
 
 ## Running Locally

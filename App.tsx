@@ -29,7 +29,7 @@ const App: React.FC = () => {
     return (localStorage.getItem('fit_totals_timeframe') as TimeFrame) || 'weekly';
   });
 
-  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   
   // History Drill Down State
   const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
@@ -40,14 +40,11 @@ const App: React.FC = () => {
   const [pinAttempts, setPinAttempts] = useState(MAX_PIN_ATTEMPTS);
   const [hasBiometrics, setHasBiometrics] = useState(false);
   
-  // Profile & Auth State
-  const [profileId, setProfileId] = useState<string | null>(null);
-  const [idInput, setIdInput] = useState('');
+  // Auth State
   const [emailInput, setEmailInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'id' | 'email' | 'otp'>('welcome');
-  const [existingProfile, setExistingProfile] = useState<any>(null);
+  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'email' | 'otp'>('welcome');
   const [user, setUser] = useState<any>(null);
   const [resendTimer, setResendTimer] = useState(0);
   
@@ -59,7 +56,14 @@ const App: React.FC = () => {
   const [logs, setLogs] = useState<WorkoutLog[]>(() => {
     try {
       const saved = localStorage.getItem('fit_logs');
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      // Migration: Convert old user_id to undefined (to be claimed by new owner_id on sync) if strictly local
+      return parsed.map((l: any) => ({
+        ...l,
+        owner_id: l.owner_id || undefined, 
+        user_id: undefined // Remove legacy field
+      }));
     } catch { return []; }
   });
 
@@ -87,7 +91,7 @@ const App: React.FC = () => {
           // No PIN set, check for session
           const { data: { session } } = await client.auth.getSession();
           if (session?.user) {
-            await resolveProfileForUser(client, session.user.id, session);
+            setUser(session.user);
             setAppState('unlocked');
           } else {
             // Check if user previously skipped auth (Offline Mode)
@@ -119,41 +123,59 @@ const App: React.FC = () => {
     }
   }, [resendTimer]);
 
-  const resolveProfileForUser = async (client: SupabaseClient, userId: string, session?: any) => {
-    try {
-      const { data, error } = await client.from('profiles').select('id').eq('owner_id', userId).maybeSingle();
-      if (error) throw error;
-      if (data?.id) {
-        setProfileId(data.id);
-        setUser(session?.user);
-      }
-    } catch (e) { console.warn("Silent profile resolve fail:", e); }
-  };
-
   // Sync Logic
   useEffect(() => {
-    if (appState === 'unlocked' && profileId && user && supabase) {
+    if (appState === 'unlocked' && user && supabase) {
       syncWithCloud();
     }
-  }, [appState, profileId, user, supabase]);
+  }, [appState, user, supabase]);
 
   const syncWithCloud = async () => {
-    if (!supabase || !profileId || !user) return;
+    if (!supabase || !user) return;
     setSyncStatus('syncing');
     try {
-      const { data: cloudLogs, error } = await supabase.from('workouts').select('*').eq('user_id', profileId);
-      if (error) throw error;
+      // Step 1: Fetch cloud data.
+      const { data: cloudLogs, error: fetchError } = await supabase.from('workouts').select('*');
+      if (fetchError) throw fetchError;
       const cloudMap = new Map((cloudLogs || []).map(l => [l.id, l]));
-      const mergedLogs = [...logs];
-      cloudLogs?.forEach(cl => {
-        if (!mergedLogs.find(l => l.id === cl.id)) mergedLogs.push(cl);
+
+      // Step 2: Prepare local data for upload and merge using a functional update to avoid race conditions.
+      let toUpload: WorkoutLog[] = [];
+      setLogs(currentLogs => {
+        // Identify logs to upload based on the fresh `currentLogs`
+        toUpload = currentLogs
+          .filter(ll => !cloudMap.has(ll.id) || !ll.owner_id)
+          .map(ll => ({ ...ll, owner_id: user.id }));
+
+        // Merge cloud logs with current local logs
+        let mergedLogs = [...currentLogs];
+        cloudLogs?.forEach(cl => {
+          if (!mergedLogs.find(l => l.id === cl.id)) {
+            mergedLogs.push(cl);
+          }
+        });
+
+        // Final state combines everything
+        const finalLogs = mergedLogs.map(l => {
+          if (toUpload.find(u => u.id === l.id) || cloudMap.has(l.id)) {
+            return { ...l, owner_id: user.id };
+          }
+          return l;
+        });
+
+        return finalLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       });
-      const toUpload = logs.filter(ll => !cloudMap.has(ll.id)).map(ll => ({ ...ll, user_id: profileId }));
-      if (toUpload.length > 0) await supabase.from('workouts').insert(toUpload);
-      setLogs(mergedLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+
+      // Step 3: Perform the upload outside the state setter.
+      if (toUpload.length > 0) {
+        const { error: upsertError } = await supabase.from('workouts').upsert(toUpload);
+        if (upsertError) throw upsertError;
+      }
+
       setSyncStatus('synced');
     } catch (err) {
-      console.error("Sync error:", err); setSyncStatus('offline');
+      console.error("Sync error:", err);
+      setSyncStatus('offline');
     }
   };
 
@@ -180,7 +202,7 @@ const App: React.FC = () => {
         setPinError("Invalid session. Please log in again.");
         await handleResetPin();
       } else {
-        await resolveProfileForUser(supabase, (sessionData as any).user.id, sessionData);
+        setUser((sessionData as any).user);
         setPinAttempts(MAX_PIN_ATTEMPTS);
         setAppState('unlocked');
       }
@@ -245,7 +267,7 @@ const App: React.FC = () => {
     setPinError(null);
     setHasBiometrics(false);
     setAppState('onboarding');
-    setOnboardingStep('id');
+    setOnboardingStep('email');
     if (supabase) await supabase.auth.signOut();
   };
   
@@ -257,30 +279,20 @@ const App: React.FC = () => {
   };
 
   const handleConnectCloud = () => {
-    setOnboardingStep('id');
+    setOnboardingStep('email');
     setAppState('onboarding');
-  };
-
-  const handleCheckId = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!supabase) return; const cleanId = idInput.trim().toLowerCase(); if (!cleanId) return;
-    setIsVerifying(true);
-    try {
-      const { data, error } = await supabase.from('profiles').select('id, email').eq('id', cleanId).maybeSingle();
-      if (error) throw error;
-      setExistingProfile(data); setOnboardingStep('email'); if (data?.email) setEmailInput(data.email);
-    } catch (err: any) { alert("Profile Check Error: " + err.message); } finally { setIsVerifying(false); }
   };
 
   const handleRequestOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault(); if (!supabase || isVerifying || resendTimer > 0) return;
     const cleanEmail = emailInput.trim().toLowerCase();
-    if (existingProfile && cleanEmail !== existingProfile.email) { alert("This Profile ID is linked to a different email address."); return; }
     setIsVerifying(true);
     try {
       setOtpInput('');
       const { error } = await supabase.auth.signInWithOtp({ email: cleanEmail, options: { shouldCreateUser: true }});
       if (error) throw error;
-      setResendTimer(60); setOnboardingStep('otp');
+      setResendTimer(60); 
+      setOnboardingStep('otp');
     } catch (err: any) { alert("Code Request Error: " + err.message); } finally { setIsVerifying(false); }
   };
 
@@ -293,40 +305,47 @@ const App: React.FC = () => {
         const { data, error } = await supabase.auth.verifyOtp({ email, token: cleanCode, type });
         if (!error && data.session) { session = data.session; break; } if (error) lastError = error;
       }
-      if (session) await finishVerification(session); else throw lastError || new Error("Invalid or expired code.");
-    } catch (err: any) { alert("Verification Failed:\n" + err.message); } finally { setIsVerifying(false); }
-  };
-
-  const finishVerification = async (session: any) => {
-    if (!supabase) return; const cleanId = idInput.trim().toLowerCase();
-    try {
-      const { data: existingOwnProfile } = await supabase.from('profiles').select('id').eq('owner_id', session.user.id).maybeSingle();
-      if (!existingOwnProfile) {
-        const { error: profileError } = await supabase.from('profiles').insert([{ id: cleanId, owner_id: session.user.id, email: session.user.email }]);
-        if (profileError) throw profileError;
+      if (session) {
+        setUser(session.user);
+        localStorage.removeItem('fit_skip_auth'); // Clear skip flag if user logs in
+        setAppState('unlocked');
+      } else {
+        throw lastError || new Error("Invalid or expired code.");
       }
-      setProfileId(cleanId);
-      setUser(session.user);
-      localStorage.removeItem('fit_skip_auth'); // Clear skip flag if user logs in
-      setAppState('unlocked');
-    } catch (err: any) { alert("Setup failed: " + err.message); }
+    } catch (err: any) { alert("Verification Failed:\n" + err.message); } finally { setIsVerifying(false); }
   };
 
   const handleLogout = async () => {
     if (window.confirm("Log out?")) {
       await secureStore.clear();
       if (supabase) await supabase.auth.signOut();
-      setProfileId(null); setUser(null); setSyncStatus('unconfigured');
-      setOnboardingStep('id'); setIdInput(''); setEmailInput(''); setOtpInput('');
+      setUser(null); setSyncStatus('unconfigured');
+      setOnboardingStep('email'); setEmailInput(''); setOtpInput('');
       setHasBiometrics(false);
       setAppState('onboarding');
-      // Note: we don't clear logs here to preserve local data
+      // Note: we don't clear logs here to preserve local data, but sync will stop
     }
   };
 
-  const clearAllData = () => {
+  const clearAllData = async () => {
     if (window.confirm("Are you sure you want to clear all workout logs? This cannot be undone.")) {
-      setLogs([]); localStorage.removeItem('fit_logs'); if ('vibrate' in navigator) navigator.vibrate([50, 50, 50]);
+      
+      let cloudSuccess = true;
+
+      if (user && supabase) {
+        const { error } = await supabase.from('workouts').delete().neq('id', '_');
+        if (error) {
+          console.error("Cloud delete failed:", error);
+          alert(`Failed to delete cloud data: ${error.message}`);
+          cloudSuccess = false;
+        }
+      }
+
+      setLogs([]); 
+      if ('vibrate' in navigator) navigator.vibrate([50, 50, 50]);
+      
+      setToastMessage(cloudSuccess ? "All data cleared" : "Local cleared (Cloud failed)");
+      setTimeout(() => setToastMessage(null), 3000);
     }
   };
 
@@ -360,7 +379,14 @@ const App: React.FC = () => {
         if (!line.trim() || (index === 0 && (line.toLowerCase().includes('date')))) return;
         const [dateStr, typeStr, repsStr, weightStr] = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
         if (dateStr && typeStr && repsStr) {
-          newLogs.push({ id: generateId(), date: new Date(dateStr).toISOString(), type: typeStr as ExerciseType, reps: parseInt(repsStr) || 0, weight: weightStr ? parseFloat(weightStr) : undefined, user_id: profileId || undefined });
+          newLogs.push({ 
+            id: generateId(), 
+            date: new Date(dateStr).toISOString(), 
+            type: typeStr as ExerciseType, 
+            reps: parseInt(repsStr) || 0, 
+            weight: weightStr ? parseFloat(weightStr) : undefined, 
+            owner_id: user?.id || undefined 
+          });
         }
       });
       if (newLogs.length > 0) { setLogs(prev => [...newLogs, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())); alert(`Imported ${newLogs.length} logs!`); }
@@ -400,13 +426,22 @@ const App: React.FC = () => {
 
   const handleAddLog = async (e: React.MouseEvent) => {
     e.stopPropagation(); const repsNum = parseInt(newEntry.reps); if (isNaN(repsNum) || repsNum <= 0) return;
-    const log: WorkoutLog = { id: generateId(), date: new Date().toISOString(), type: newEntry.type, reps: repsNum, weight: parseFloat(newEntry.weight) || undefined, user_id: profileId || undefined };
+    const log: WorkoutLog = { 
+        id: generateId(), 
+        date: new Date().toISOString(), 
+        type: newEntry.type, 
+        reps: repsNum, 
+        weight: parseFloat(newEntry.weight) || undefined, 
+        owner_id: user?.id || undefined 
+    };
     if ('vibrate' in navigator) navigator.vibrate(25); setLogs(prev => [log, ...prev]); setNewEntry({ type: newEntry.type, reps: '', weight: '' });
-    setShowToast(true);
-    if (supabase && profileId && user) {
-      setSyncStatus('syncing'); const { error } = await supabase.from('workouts').insert([log]); setSyncStatus(error ? 'offline' : 'synced');
+    setToastMessage("✓ Logged!");
+    if (supabase && user) {
+      setSyncStatus('syncing'); 
+      const { error } = await supabase.from('workouts').insert([log]); 
+      setSyncStatus(error ? 'offline' : 'synced');
     }
-    setTimeout(() => { setShowToast(false); setActiveTab('dashboard'); }, 1500);
+    setTimeout(() => { setToastMessage(null); setActiveTab('dashboard'); }, 1500);
   };
 
   const maxStats = useMemo(() => EXERCISES.map(ex => {
@@ -458,32 +493,49 @@ const App: React.FC = () => {
 
   if (appState === 'onboarding') {
     return (
-      <div className="h-[100dvh] bg-indigo-600 flex flex-col items-center justify-center p-8 text-white overflow-hidden">
-        <div className="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center mb-8 backdrop-blur-md animate-pulse">
-          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        </div>
-        <div className="text-center space-y-4 max-w-sm">
-          <h1 className="text-3xl font-black">FitTrack Pro</h1>
-          <p className="text-indigo-100/80 text-sm font-medium leading-relaxed">
-            {onboardingStep === 'welcome' ? "Track your workouts anywhere." : onboardingStep === 'id' ? "Enter a unique Profile ID to sync your data." : onboardingStep === 'email' ? "Link your account to an email." : "Enter your verification code."}
-          </p>
-        </div>
-        
-        <div className="mt-12 w-full max-w-sm space-y-4">
-          {onboardingStep === 'welcome' && (
-            <div className="flex flex-col gap-4">
-              <button onClick={() => setOnboardingStep('id')} className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl">
-                Sync with Cloud
-              </button>
-              <button onClick={handleSkipAuth} className="w-full bg-indigo-500/50 text-indigo-100 py-5 rounded-2xl font-bold border-2 border-indigo-400/30 hover:bg-indigo-500/70">
-                Use Offline
-              </button>
+      <div className="fixed inset-0 overflow-y-auto bg-indigo-600 z-50">
+        <div className="min-h-[100dvh] w-full flex flex-col pt-24 px-6 pb-12 text-white">
+          <div className="flex-1 flex flex-col items-center w-full max-w-md mx-auto">
+            <div className="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center mb-8 backdrop-blur-md animate-pulse">
+              <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             </div>
-          )}
-
-          {onboardingStep === 'id' && (<form onSubmit={handleCheckId} className="space-y-4"><input type="text" required value={idInput} onChange={e => setIdInput(e.target.value)} placeholder="Profile ID" className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-5 text-white placeholder-white/40 font-bold outline-none focus:border-white/60 text-center" /><button type="submit" className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl">Continue</button></form>)}
-          {onboardingStep === 'email' && (<form onSubmit={handleRequestOtp} className="space-y-4"><input type="email" required value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="Email Address" className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-5 text-white placeholder-white/40 font-bold outline-none focus:border-white/60 text-center" /><button type="submit" disabled={resendTimer > 0} className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl disabled:opacity-50">{resendTimer > 0 ? `Wait ${resendTimer}s` : "Send Code"}</button></form>)}
-          {onboardingStep === 'otp' && (<form onSubmit={handleVerifyOtp} className="space-y-4"><input type="text" inputMode="numeric" required value={otpInput} onChange={e => setOtpInput(e.target.value)} placeholder="000000" className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-5 text-white placeholder-white/40 font-bold outline-none focus:border-white/60 text-center tracking-widest text-4xl" /><button type="submit" className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl">Verify</button></form>)}
+            
+            <div className="text-center space-y-4 max-w-sm mb-8">
+              <h1 className="text-3xl font-black">FitTrack Pro</h1>
+              <p className="text-indigo-100/80 text-sm font-medium leading-relaxed">
+                {onboardingStep === 'welcome' ? "Track your workouts anywhere." : "Enter your email to sync across devices."}
+              </p>
+            </div>
+            
+            <div className="w-full max-w-sm space-y-4">
+              {onboardingStep === 'welcome' && (
+                <div className="flex flex-col gap-4">
+                  <button onClick={() => setOnboardingStep('email')} className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl">
+                    Sign In / Sync
+                  </button>
+                  <button onClick={handleSkipAuth} className="w-full bg-indigo-500/50 text-indigo-100 py-5 rounded-2xl font-bold border-2 border-indigo-400/30 hover:bg-indigo-500/70">
+                    Use Offline
+                  </button>
+                </div>
+              )}
+              
+              {onboardingStep === 'email' && (
+                <form onSubmit={handleRequestOtp} className="space-y-4">
+                  <input type="email" required value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="Email Address" className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-5 text-white placeholder-white/40 font-bold outline-none focus:border-white/60 text-center" />
+                  <button type="submit" disabled={resendTimer > 0} className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl disabled:opacity-50">{resendTimer > 0 ? `Wait ${resendTimer}s` : "Send Code"}</button>
+                  <button type="button" onClick={() => setOnboardingStep('welcome')} className="w-full py-2 text-indigo-200 font-medium">Back</button>
+                </form>
+              )}
+              
+              {onboardingStep === 'otp' && (
+                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                  <input type="text" inputMode="numeric" required value={otpInput} onChange={e => setOtpInput(e.target.value)} placeholder="000000" className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-5 text-white placeholder-white/40 font-bold outline-none focus:border-white/60 text-center tracking-widest text-4xl" />
+                  <button type="submit" className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl">Verify</button>
+                  <button type="button" onClick={() => setOnboardingStep('email')} className="w-full py-2 text-indigo-200 font-medium">Back</button>
+                </form>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -589,7 +641,7 @@ const App: React.FC = () => {
             <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Reps</label><input type="number" inputMode="numeric" value={newEntry.reps} onChange={e => setNewEntry({...newEntry, reps: e.target.value})} placeholder="0" className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl focus:border-indigo-600 outline-none" /></div>
             <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Weight (kg)</label><input type="number" inputMode="decimal" value={newEntry.weight} onChange={e => setNewEntry({...newEntry, weight: e.target.value})} placeholder="0" disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl focus:border-indigo-600 outline-none" /></div>
           </div>
-          <button onClick={handleAddLog} disabled={!newEntry.reps || parseInt(newEntry.reps) <= 0 || showToast} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg">{showToast ? 'SAVED! ✨' : 'SAVE SET'}</button>
+          <button onClick={handleAddLog} disabled={!newEntry.reps || parseInt(newEntry.reps) <= 0 || !!toastMessage} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg">{toastMessage === '✓ Logged!' ? 'SAVED! ✨' : 'SAVE SET'}</button>
         </div>
       )}
       {activeTab === 'settings' && (
@@ -597,9 +649,9 @@ const App: React.FC = () => {
           <header className="text-center font-bold text-2xl text-slate-800">Settings</header>
           
           {/* Profile Card */}
-          {profileId ? (
+          {user ? (
             <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
-              <div className="flex items-center gap-3"><div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-black text-lg">{profileId.charAt(0).toUpperCase()}</div><div><p className="font-bold text-slate-800 truncate max-w-[150px]">{profileId}</p><p className="text-[10px] text-emerald-500 font-bold uppercase">Cloud Connected</p></div></div>
+              <div className="flex items-center gap-3"><div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-black text-lg">{user.email?.charAt(0).toUpperCase()}</div><div><p className="font-bold text-slate-800 truncate max-w-[150px]">{user.email}</p><p className="text-[10px] text-emerald-500 font-bold uppercase">Cloud Connected</p></div></div>
               <button onClick={handleLogout} className="text-[10px] font-black text-slate-400 uppercase border-2 border-slate-50 px-4 py-2 rounded-xl hover:text-red-500">Sign Out</button>
             </div>
           ) : (
@@ -657,7 +709,7 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      {showToast && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-3 shadow-2xl toast-animate">✓ Logged!</div>}
+      {toastMessage && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-3 shadow-2xl toast-animate">{toastMessage}</div>}
     </Layout>
   );
 };
