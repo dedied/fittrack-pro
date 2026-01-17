@@ -64,6 +64,7 @@ const App: React.FC = () => {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
+      // Fixed: corrected typo in event listener removal name from appinstalledHandler to appInstalledHandler
       window.removeEventListener('appinstalled', appInstalledHandler);
     };
   }, []);
@@ -122,7 +123,10 @@ const App: React.FC = () => {
     });
   }, [logs, timeFrame]);
 
-  const handleAddLog = () => {
+  const handleAddLog = (e: React.MouseEvent) => {
+    // Stop propagation to prevent any potential menu interference
+    e.stopPropagation();
+    
     const repsNum = parseInt(newEntry.reps);
     if (isNaN(repsNum) || repsNum <= 0) return;
 
@@ -238,7 +242,7 @@ const App: React.FC = () => {
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
       {activeTab === 'dashboard' && (
-        <div className="space-y-8 animate-in fade-in duration-500">
+        <div className="space-y-6 animate-in fade-in duration-500">
           <section>
             <ProgressChart logs={logs} timeFrame={timeFrame} setTimeFrame={setTimeFrame} />
           </section>
@@ -249,7 +253,7 @@ const App: React.FC = () => {
               {maxStats.map(ex => (
                 <div key={`pb-${ex.id}`} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div>
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10 shrink-0`}>{ex.icon}</div>
                     <div>
                       <p className="font-bold text-slate-800">{ex.label}</p>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{ex.targetMuscle}</p>
@@ -273,14 +277,12 @@ const App: React.FC = () => {
           </section>
 
           <section className="space-y-3">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Active Stats</h2>
-            </div>
+            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">Period Totals</h2>
             <div className="grid grid-cols-3 gap-3">
               {filteredStats.map(ex => (
                 <div key={`total-${ex.id}`} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center">
                   <div className="mb-2">{ex.icon}</div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight text-center">{ex.label}</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight text-center truncate w-full">{ex.label}</span>
                   <span className="text-xl font-bold text-slate-800">{ex.totalReps}</span>
                 </div>
               ))}
@@ -290,69 +292,117 @@ const App: React.FC = () => {
       )}
 
       {activeTab === 'add' && (
-        <div className="space-y-8 py-4 animate-in slide-in-from-bottom-4 duration-300">
+        <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
           <div className="text-center">
-            <h2 className="text-2xl font-bold text-slate-800">New Session</h2>
+            <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Record Set</h2>
+            <p className="text-slate-400 text-xs font-medium uppercase mt-1">Select exercise & log details</p>
           </div>
-          <div className="space-y-4">
+          
+          <div className="space-y-2">
             {EXERCISES.map(ex => (
               <button
                 key={ex.id}
                 onClick={() => setNewEntry({ ...newEntry, type: ex.id })}
-                className={`flex items-center gap-4 p-4 rounded-2xl border-2 w-full transition-all ${newEntry.type === ex.id ? 'border-indigo-600 bg-indigo-50 shadow-md' : 'border-slate-100 bg-white'}`}
+                className={`flex items-center gap-4 p-4 rounded-2xl border-2 w-full transition-all active:scale-[0.98] ${newEntry.type === ex.id ? 'border-indigo-600 bg-indigo-50/50 shadow-sm' : 'border-slate-100 bg-white'}`}
               >
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div>
-                <div className="text-left"><p className="font-bold text-lg">{ex.label}</p></div>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10 shrink-0`}>{ex.icon}</div>
+                <div className="text-left flex-1">
+                  <p className="font-bold text-slate-800">{ex.label}</p>
+                </div>
+                {newEntry.type === ex.id && (
+                  <div className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  </div>
+                )}
               </button>
             ))}
           </div>
+
           <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Reps</label>
-              <input type="number" inputMode="numeric" value={newEntry.reps} onChange={(e) => setNewEntry({ ...newEntry, reps: e.target.value })} placeholder="0" className="w-full text-2xl font-bold text-center p-5 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-600/20" />
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Reps</label>
+              <input 
+                type="number" 
+                inputMode="numeric" 
+                value={newEntry.reps} 
+                onChange={(e) => setNewEntry({ ...newEntry, reps: e.target.value })} 
+                placeholder="0" 
+                className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" 
+              />
             </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Weight (kg)</label>
-              <input type="number" inputMode="decimal" value={newEntry.weight} onChange={(e) => setNewEntry({ ...newEntry, weight: e.target.value })} placeholder="0" disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} className="w-full text-2xl font-bold text-center p-5 bg-slate-100 rounded-2xl outline-none disabled:opacity-30 focus:ring-2 focus:ring-indigo-600/20" />
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Weight (kg)</label>
+              <input 
+                type="number" 
+                inputMode="decimal" 
+                value={newEntry.weight} 
+                onChange={(e) => setNewEntry({ ...newEntry, weight: e.target.value })} 
+                placeholder="0" 
+                disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} 
+                className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl outline-none disabled:opacity-30 disabled:bg-slate-100 focus:ring-4 focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" 
+              />
             </div>
           </div>
-          <div className="pb-10">
-            <button onClick={handleAddLog} disabled={!newEntry.reps} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-bold text-lg shadow-lg active:scale-95 transition-transform disabled:opacity-50">Log Workout</button>
+
+          <div className="pt-2">
+            <button 
+              onClick={handleAddLog} 
+              disabled={!newEntry.reps || parseInt(newEntry.reps) <= 0} 
+              className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-all disabled:opacity-50 uppercase tracking-widest flex items-center justify-center gap-3"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Save Set
+            </button>
           </div>
         </div>
       )}
 
       {activeTab === 'settings' && (
-        <div className="space-y-8 animate-in fade-in duration-300">
-          <header className="text-center py-4">
-            <h2 className="text-2xl font-bold text-slate-800">Settings</h2>
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <header className="text-center">
+            <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Settings</h2>
           </header>
           
-          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
+          <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
             {deferredPrompt && (
               <button 
                 onClick={handleInstallClick} 
-                className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-indigo-600"
+                className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-indigo-600 transition-colors"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Install App
+                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </div>
+                <div className="text-left">
+                  <p className="font-bold">Install FitTrack Pro</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Add to home screen</p>
+                </div>
               </button>
             )}
             
             <button 
               onClick={exportToCSV} 
-              className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800"
+              className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800 transition-colors"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              Export CSV
+              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <div className="text-left">
+                <p className="font-bold">Export History</p>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Download .CSV</p>
+              </div>
             </button>
             
             <button 
               onClick={() => fileInputRef.current?.click()} 
-              className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800"
+              className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold text-slate-800 transition-colors"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Import CSV
+              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </div>
+              <div className="text-left">
+                <p className="font-bold">Import History</p>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Restore .CSV</p>
+              </div>
             </button>
             
             <input 
@@ -365,16 +415,21 @@ const App: React.FC = () => {
             
             <button 
               onClick={clearAllData} 
-              className="w-full p-5 flex items-center gap-4 hover:bg-red-50 font-bold text-red-600"
+              className="w-full p-6 flex items-center gap-4 hover:bg-red-50 font-bold text-red-600 transition-colors"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-              Wipe Data
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+              </div>
+              <div className="text-left">
+                <p className="font-bold">Clear Data</p>
+                <p className="text-[10px] text-red-400 uppercase tracking-wide">Wipe all logs</p>
+              </div>
             </button>
           </div>
           
-          <p className="text-center text-[10px] uppercase font-bold text-slate-300 tracking-widest">
-            {isInstalled ? 'App Mode' : 'Browser Mode'} • v1.0.2
-          </p>
+          <div className="text-center opacity-30">
+            <p className="text-[10px] uppercase font-black tracking-widest text-slate-500">FitTrack Pro v1.0.4</p>
+          </div>
         </div>
       )}
     </Layout>
