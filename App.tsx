@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4';
 import Layout, { TabType, SyncStatus } from './components/Layout';
 import ProgressChart from './components/ProgressChart';
 import PinLockScreen from './components/PinLockScreen';
@@ -18,7 +18,7 @@ export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type AppState = 'loading' | 'locked' | 'unlocked' | 'onboarding' | 'creatingPin' | 'confirmingPinForBio';
 const MAX_PIN_ATTEMPTS = 5;
 
-const generateId = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).substring(2)}`;
+const generateId = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).substring(2)}`;
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('loading');
@@ -431,10 +431,26 @@ const App: React.FC = () => {
       {activeTab === 'settings' && (
         <div className="space-y-6">
           <header className="text-center font-bold text-2xl text-slate-800">Settings</header>
+          
+          {/* Profile Card */}
           <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-3"><div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-black text-lg">{profileId?.charAt(0).toUpperCase()}</div><div><p className="font-bold text-slate-800 truncate max-w-[150px]">{profileId}</p><p className="text-[10px] text-emerald-500 font-bold uppercase">Cloud Connected</p></div></div>
             <button onClick={handleLogout} className="text-[10px] font-black text-slate-400 uppercase border-2 border-slate-50 px-4 py-2 rounded-xl hover:text-red-500">Sign Out</button>
           </div>
+
+          {/* Install App Button - Standalone Section */}
+          <button onClick={handleInstallClick} className="w-full bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center gap-4 shadow-sm text-indigo-600 active:scale-95 transition-transform">
+             <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center">
+               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+             </div>
+             <div className="text-left flex-1">
+               <p className="font-bold text-lg text-slate-800">Install App</p>
+               <p className="text-[10px] font-bold uppercase text-slate-400">Add to Home Screen</p>
+             </div>
+             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+
+          {/* Main Settings List */}
           <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
             <button onClick={handleToggleBiometrics} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasBiometrics ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
@@ -449,7 +465,6 @@ const App: React.FC = () => {
               </div>
             </button>
             <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div><div className="text-left flex-1 font-bold">Change PIN</div></button>
-            <button onClick={handleInstallClick} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-indigo-600"><div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">📱</div><div className="text-left flex-1 font-bold">Install App</div></button>
             <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
             <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
             <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>

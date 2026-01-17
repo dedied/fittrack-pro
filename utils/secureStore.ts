@@ -44,7 +44,15 @@ const dbAction = (type: 'get' | 'put' | 'delete', key: string, value?: any): Pro
 };
 
 // --- Base64 Helpers ---
-const bufferToBase64 = (buffer: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buffer)));
+const bufferToBase64 = (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+};
+
 const base64ToBuffer = (base64: string) => Uint8Array.from(atob(base64), c => c.charCodeAt(0));
 
 // --- Crypto Helpers ---
@@ -146,24 +154,35 @@ export const secureStore = {
        const challenge = new Uint8Array(32);
        window.crypto.getRandomValues(challenge);
        
-       await navigator.credentials.create({
+       // Generate a random User ID to prevent collisions if re-registering
+       const userId = new Uint8Array(16);
+       window.crypto.getRandomValues(userId);
+
+       const credential = await navigator.credentials.create({
          publicKey: {
            challenge,
            rp: { name: "FitTrack Pro" },
            user: {
-             id: new Uint8Array(16),
-             name: "user",
-             displayName: "User"
+             id: userId,
+             name: `user_${Date.now()}`,
+             displayName: "FitTrack User"
            },
            pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
-           authenticatorSelection: { userVerification: "required" },
+           authenticatorSelection: { 
+             authenticatorAttachment: 'platform',
+             userVerification: "required" 
+           },
            timeout: 60000,
            attestation: 'none'
          }
-       });
+       }) as PublicKeyCredential;
        
-       // Store the PIN guarded by this logical check
-       await dbAction('put', BIO_KEY, { key: BIO_KEY, pin });
+       if (!credential) return false;
+
+       // Store the PIN guarded by this logical check, AND the credential ID
+       const credentialId = bufferToBase64(credential.rawId);
+
+       await dbAction('put', BIO_KEY, { key: BIO_KEY, pin, credentialId });
        return true;
     } catch (e) {
        console.error("Biometric setup failed", e);
@@ -177,16 +196,21 @@ export const secureStore = {
 
   async getBiometricPin(): Promise<string | null> {
      const data = await dbAction('get', BIO_KEY);
-     if (!data || !data.pin) return null;
+     if (!data || !data.pin || !data.credentialId) return null;
 
      try {
        const challenge = new Uint8Array(32);
        window.crypto.getRandomValues(challenge);
-       
-       // Prompt for biometric authentication
+       const credentialIdBuffer = base64ToBuffer(data.credentialId);
+
+       // Prompt for biometric authentication using the stored Credential ID
        await navigator.credentials.get({
          publicKey: {
            challenge,
+           allowCredentials: [{
+             id: credentialIdBuffer,
+             type: 'public-key'
+           }],
            userVerification: "required",
            timeout: 60000
          }
@@ -202,6 +226,6 @@ export const secureStore = {
 
   async hasBiometrics(): Promise<boolean> {
      const data = await dbAction('get', BIO_KEY);
-     return !!data;
+     return !!data && !!data.credentialId;
   }
 };
