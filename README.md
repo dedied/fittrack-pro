@@ -18,12 +18,13 @@ Built with React, Vite, and Tailwind CSS, it offers a seamless native-like exper
 To enable cloud syncing, set up a Supabase project and run the following SQL query in the **SQL Editor** to create the necessary tables and security policies.
 
 ```sql
--- Drop existing tables
+------------------------------------------------------------
+-- 0. TEAR DOWN (safe order)
+------------------------------------------------------------
 DROP TABLE IF EXISTS public.workouts;
-DROP TABLE IF EXISTS public.profiles; -- Legacy table cleanup
 
 ------------------------------------------------------------
--- 1. WORKOUTS TABLE (linked directly to auth.users)
+-- 1. WORKOUTS TABLE (directly linked to auth.users)
 ------------------------------------------------------------
 CREATE TABLE public.workouts (
   id TEXT PRIMARY KEY,
@@ -31,7 +32,8 @@ CREATE TABLE public.workouts (
   type TEXT NOT NULL,
   reps INTEGER NOT NULL,
   weight FLOAT,
-  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+  owner_id UUID NOT NULL
+    REFERENCES auth.users(id) ON DELETE CASCADE
 );
 
 ------------------------------------------------------------
@@ -40,30 +42,14 @@ CREATE TABLE public.workouts (
 ALTER TABLE public.workouts ENABLE ROW LEVEL SECURITY;
 
 ------------------------------------------------------------
--- 3. WORKOUTS POLICIES
+-- 3. RLS POLICIES
 ------------------------------------------------------------
 
--- Unified policy: Users can only CRUD their own data
+-- Unified policy: users can only manage their own workouts
 CREATE POLICY workouts_owner ON public.workouts
   FOR ALL
   USING (auth.uid() = owner_id)
   WITH CHECK (auth.uid() = owner_id);
 
+
 ```
-
-## Running Locally
-
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-2. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-3. Build for production:
-   ```bash
-   npm run build
-   ```
