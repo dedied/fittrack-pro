@@ -151,7 +151,7 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs }) => {
 
   if (logs.length === 0) {
     return (
-      <div className="h-72 flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400 text-sm space-y-2">
+      <div className="h-48 flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400 text-sm space-y-2">
         <div className="text-3xl opacity-20">📊</div>
         <p>Log a workout to see progress!</p>
       </div>
@@ -233,7 +233,7 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs }) => {
         </div>
       </div>
 
-      <div className="w-full relative" style={{ height: '300px' }}>
+      <div className="w-full relative" style={{ height: '200px' }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
