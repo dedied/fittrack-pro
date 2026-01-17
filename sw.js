@@ -1,9 +1,11 @@
-const CACHE_NAME = 'fittrack-v1.2.3';
-const BASE_PATH = '/fittrack-pro/';
+
+const CACHE_NAME = 'fittrack-v1.9.1';
+
+// We determine the base path dynamically or use relative paths
 const ASSETS_TO_PRECACHE = [
-  BASE_PATH,
-  BASE_PATH + 'index.html',
-  BASE_PATH + 'manifest.json'
+  './',
+  './index.html',
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -34,35 +36,35 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Handle Navigation (Loading the App)
+  // For navigation requests, try network first, then cache, then fallback to index.html
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(() => {
-        // Fallback to cached index.html
-        return caches.match(BASE_PATH + 'index.html') || caches.match(BASE_PATH);
+        return caches.match('./index.html') || caches.match('./');
       })
     );
     return;
   }
 
-  // Handle Assets
+  // For other assets, use Cache-First strategy
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
-
       return fetch(request).then((networkResponse) => {
         if (!networkResponse || networkResponse.status !== 200 || networkResponse.type === 'error') {
           return networkResponse;
         }
-
         const responseToCache = networkResponse.clone();
         caches.open(CACHE_NAME).then((cache) => {
-          // Cache assets from our origin or CDNs
-          if (url.origin === self.location.origin || url.hostname.includes('fonts.')) {
-            cache.put(request, responseToCache);
+          // Only cache assets from our own origin or specific trusted CDNs
+          if (url.origin === self.location.origin || url.hostname.includes('fonts.') || url.hostname.includes('esm.sh')) {
+            try {
+              cache.put(request, responseToCache);
+            } catch (e) {
+              // Ignore cache put errors (e.g. for chrome-extension://)
+            }
           }
         });
-
         return networkResponse;
       }).catch(() => null);
     })

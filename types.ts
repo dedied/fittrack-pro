@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export type ExerciseType = 'pushups' | 'situps' | 'bicep_curls';
@@ -8,6 +9,7 @@ export interface WorkoutLog {
   type: ExerciseType;
   reps: number;
   weight?: number; // Optional weight in kg/lbs
+  user_id?: string; // Associated cloud user id
 }
 
 export interface ExerciseDefinition {
