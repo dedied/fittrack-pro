@@ -12,7 +12,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.2';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -78,6 +78,7 @@ const App: React.FC = () => {
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
   const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
   const [showPrivacyDialog, setShowPrivacyDialog] = useState(false);
+  const [logToDelete, setLogToDelete] = useState<string | null>(null);
   
   // Sync Error Handling
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -232,6 +233,15 @@ const App: React.FC = () => {
     setSyncStatus('syncing');
     setSyncError(null);
     try {
+      // 0. Process Pending Deletions FIRST
+      const pendingDeletes: string[] = JSON.parse(localStorage.getItem('fit_pending_deletes') || '[]');
+      if (pendingDeletes.length > 0) {
+          const { error: deleteError } = await supabase.from('workouts').delete().in('id', pendingDeletes);
+          if (deleteError) throw deleteError;
+          // Clear pending deletes after success
+          localStorage.removeItem('fit_pending_deletes');
+      }
+
       // 1. Fetch Cloud Data (Source of Truth for existing IDs)
       const { data: cloudLogs, error: fetchError } = await supabase.from('workouts').select('*');
       if (fetchError) throw fetchError;
@@ -518,6 +528,33 @@ const App: React.FC = () => {
     
     setToastMessage(cloudSuccess ? "All data cleared" : "Local cleared (Cloud failed)");
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const performDeleteLog = async () => {
+    if (!logToDelete) return;
+    const logId = logToDelete;
+    setLogToDelete(null);
+
+    // 1. Remove locally immediately
+    const updatedLogs = logs.filter(l => l.id !== logId);
+    setLogs(updatedLogs);
+    
+    // 2. Track pending deletion for sync (if user is logged in)
+    if (user) {
+        const pendingDeletes = JSON.parse(localStorage.getItem('fit_pending_deletes') || '[]');
+        if (!pendingDeletes.includes(logId)) {
+            pendingDeletes.push(logId);
+            localStorage.setItem('fit_pending_deletes', JSON.stringify(pendingDeletes));
+        }
+
+        // 3. Try to sync if connected (with small delay to allow state updates)
+        if (navigator.onLine && supabase) {
+            setTimeout(() => syncWithCloud(), 100);
+        }
+    }
+
+    setToastMessage("✓ Entry removed"); // Added tick for green toast
+    setTimeout(() => setToastMessage(null), 2000);
   };
 
   const handleConfirmDeleteAccount = async () => {
@@ -858,7 +895,7 @@ const App: React.FC = () => {
             <div className="text-center space-y-4 max-w-sm mb-8">
               <h1 className="text-3xl font-black">FitTrack Pro</h1>
               <p className="text-indigo-100/80 text-sm font-medium leading-relaxed">
-                {onboardingStep === 'welcome' ? "Track your workouts anywhere." : "Enter your email to sync across devices."}
+                {onboardingStep === 'welcome' ? "Track your workouts anywhere." : "Enter your email to sign in and sync across devices."}
               </p>
             </div>
             
@@ -922,337 +959,350 @@ const App: React.FC = () => {
     );
   }
 
-  // --- Main Render ---
-
-  // History Detail View
-  if (activeTab === 'dashboard' && viewingHistory) {
-    const exerciseDef = EXERCISES.find(e => e.id === viewingHistory);
-    return (
-      <div className="h-[100dvh] w-full flex flex-col bg-slate-50 relative">
-        <div className="bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0 flex items-center gap-4 z-30 shadow-sm sticky top-0">
-          <button onClick={() => setViewingHistory(null)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-          </button>
-          <div>
-            <h1 className="text-xl font-black text-slate-800 tracking-tight">{exerciseDef?.label} History</h1>
-            <p className="text-[10px] text-slate-400 font-bold uppercase">{totalsTimeFrame} Logs</p>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-          {historyLogs.length === 0 ? (
-            <div className="text-center text-slate-400 py-10">No logs found for this period.</div>
-          ) : (
-            historyLogs.map(log => (
-              <div key={log.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
-                <div>
-                   <p className="text-sm font-bold text-slate-800">{new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</p>
-                   <p className="text-[10px] text-slate-400 font-bold">{new Date(log.date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</p>
-                </div>
-                <div className="text-right">
-                   <p className="text-lg font-black text-indigo-600">{log.reps} <span className="text-[10px] text-slate-400 font-bold uppercase">Reps</span></p>
-                   {log.weight && <p className="text-xs font-bold text-emerald-600">{log.weight}kg</p>}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    );
-  }
+  // --- Main Render (Modified to include Dialogs on all paths) ---
+  
+  // Exercise definition helper (only needed for History View)
+  const exerciseDef = viewingHistory ? EXERCISES.find(e => e.id === viewingHistory) : null;
 
   return (
     <>
-      <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={handleSyncClick}>
-        {activeTab === 'dashboard' && (
-          <div className="space-y-6">
-            <ProgressChart logs={logs} />
-            <section className="space-y-3">
-              <div className="flex items-center justify-between ml-1">
-                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Period Totals</h2>
-                <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">{(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map(tf => (<button key={tf} onClick={() => setTotalsTimeFrame(tf)} className={`px-2 py-1 text-[9px] font-bold uppercase rounded-lg ${totalsTimeFrame === tf ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>{tf.charAt(0)}</button>))}</div>
-              </div>
-              <div className="grid grid-cols-3 gap-3">{filteredStats.map(ex => (
-                <div 
-                  key={ex.id} 
-                  onClick={() => setViewingHistory(ex.id)}
-                  className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center cursor-pointer active:scale-95 transition-transform hover:border-indigo-100"
-                >
-                  <div className="mb-2">{ex.icon}</div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase text-center">{ex.label}</span>
-                  <span className="text-xl font-bold text-slate-800">{ex.totalReps}</span>
-                </div>
-              ))}</div>
-            </section>
-            <section className="space-y-3">
-              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">🏆 Personal Bests</h2>
-              <div className="grid grid-cols-1 gap-3">
-                {maxStats.map(ex => (
-                  <div key={ex.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div>
-                      <div>
-                        <p className="font-bold text-slate-800">{ex.label}</p>
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">{ex.targetMuscle}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-4">
-                      <div className="text-right flex flex-col items-end">
-                         <p className="text-xl font-black text-indigo-600 leading-none">{ex.maxRep}</p>
-                         <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Reps</p>
-                         {ex.maxRepDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxRepDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxRepDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
-                      </div>
-                      {ex.isWeighted && (
-                         <div className="text-right border-l pl-4 flex flex-col items-end">
-                           <p className="text-xl font-black text-emerald-600 leading-none">{ex.maxWeight}kg</p>
-                           <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Weight</p>
-                           {ex.maxWeightDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxWeightDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxWeightDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
-                         </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+      {activeTab === 'dashboard' && viewingHistory ? (
+         // --- HISTORY VIEW (Replaces Layout) ---
+         <div className="h-[100dvh] w-full flex flex-col bg-slate-50 relative">
+          <div className="bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0 flex items-center gap-4 z-30 shadow-sm sticky top-0">
+            <button onClick={() => setViewingHistory(null)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div>
+              <h1 className="text-xl font-black text-slate-800 tracking-tight">{exerciseDef?.label} History</h1>
+              <p className="text-[10px] text-slate-400 font-bold uppercase">{totalsTimeFrame} Logs</p>
+            </div>
           </div>
-        )}
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+            {historyLogs.length === 0 ? (
+              <div className="text-center text-slate-400 py-10">No logs found for this period.</div>
+            ) : (
+              historyLogs.map(log => (
+                <div key={log.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                      <div>
+                         <p className="text-sm font-bold text-slate-800">{new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                         <p className="text-[10px] text-slate-400 font-bold">{new Date(log.date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</p>
+                      </div>
+                      <div className="text-right">
+                         <p className="text-lg font-black text-indigo-600">{log.reps} <span className="text-[10px] text-slate-400 font-bold uppercase">Reps</span></p>
+                         {log.weight && <p className="text-xs font-bold text-emerald-600">{log.weight}kg</p>}
+                      </div>
+                  </div>
+                  {/* Remove Pill */}
+                  <div className="flex justify-end pt-2 border-t border-slate-50">
+                      <button 
+                         onClick={(e) => { e.stopPropagation(); setLogToDelete(log.id); }}
+                         className="bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-500 text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                         <span>Remove</span>
+                      </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ) : (
+        // --- NORMAL LAYOUT (Tabs) ---
+        <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={handleSyncClick}>
+          {activeTab === 'dashboard' && (
+            <div className="space-y-6">
+              <ProgressChart logs={logs} />
+              <section className="space-y-3">
+                <div className="flex items-center justify-between ml-1">
+                  <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Period Totals</h2>
+                  <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">{(['daily', 'weekly', 'monthly', 'yearly'] as TimeFrame[]).map(tf => (<button key={tf} onClick={() => setTotalsTimeFrame(tf)} className={`px-2 py-1 text-[9px] font-bold uppercase rounded-lg ${totalsTimeFrame === tf ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>{tf.charAt(0)}</button>))}</div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">{filteredStats.map(ex => (
+                  <div 
+                    key={ex.id} 
+                    onClick={() => setViewingHistory(ex.id)}
+                    className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center cursor-pointer active:scale-95 transition-transform hover:border-indigo-100"
+                  >
+                    <div className="mb-2">{ex.icon}</div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase text-center">{ex.label}</span>
+                    <span className="text-xl font-bold text-slate-800">{ex.totalReps}</span>
+                  </div>
+                ))}</div>
+              </section>
+              <section className="space-y-3">
+                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">🏆 Personal Bests</h2>
+                <div className="grid grid-cols-1 gap-3">
+                  {maxStats.map(ex => (
+                    <div key={ex.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div>
+                        <div>
+                          <p className="font-bold text-slate-800">{ex.label}</p>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">{ex.targetMuscle}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-4">
+                        <div className="text-right flex flex-col items-end">
+                           <p className="text-xl font-black text-indigo-600 leading-none">{ex.maxRep}</p>
+                           <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Reps</p>
+                           {ex.maxRepDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxRepDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxRepDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
+                        </div>
+                        {ex.isWeighted && (
+                           <div className="text-right border-l pl-4 flex flex-col items-end">
+                             <p className="text-xl font-black text-emerald-600 leading-none">{ex.maxWeight}kg</p>
+                             <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Weight</p>
+                             {ex.maxWeightDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxWeightDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxWeightDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
+                           </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
 
-        {activeTab === 'add' && (
-          <div className="h-full flex flex-col justify-center">
-            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
-               <div className="text-center mb-8">
-                 <h2 className="text-2xl font-black text-slate-800">New Entry</h2>
-                 <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">Select Exercise & Details</p>
-               </div>
-
-               <div className="grid grid-cols-3 gap-3 mb-6">
-                 {EXERCISES.map(ex => {
-                   const isSelected = newEntry.type === ex.id;
-                   return (
-                     <button
-                       key={ex.id}
-                       onClick={() => setNewEntry({ ...newEntry, type: ex.id })}
-                       className={`flex flex-col items-center justify-center p-4 rounded-2xl transition-all border-2 ${isSelected ? 'border-indigo-600 bg-indigo-50' : 'border-transparent bg-slate-50 hover:bg-slate-100'}`}
-                     >
-                       <div className={`text-2xl mb-2 transition-transform ${isSelected ? 'scale-110' : 'grayscale opacity-50'}`}>{ex.icon}</div>
-                     </button>
-                   );
-                 })}
-               </div>
-               
-               <div className="text-center mb-8">
-                  <span className="text-indigo-600 font-black uppercase text-sm tracking-widest border-b-2 border-indigo-100 pb-1">
-                    {EXERCISES.find(e => e.id === newEntry.type)?.label}
-                  </span>
-               </div>
-
-               <div className="space-y-4">
-                 <div className="relative group">
-                   <input 
-                      type="datetime-local" 
-                      value={toDateTimeLocal(entryDate)}
-                      onChange={handleDateChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                   />
-                   <div className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 font-bold text-slate-700 transition-colors text-sm flex items-center group-focus-within:border-indigo-500">
-                      {formatNiceDate(entryDate)}
-                   </div>
-                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
-                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                   </div>
+          {activeTab === 'add' && (
+            <div className="h-full flex flex-col justify-center">
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+                 <div className="text-center mb-8">
+                   <h2 className="text-2xl font-black text-slate-800">New Entry</h2>
+                   <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">Select Exercise & Details</p>
                  </div>
 
-                 <div className="flex gap-3">
-                    <div className="relative flex-1">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest absolute -top-2 left-3 bg-white px-1 z-10">Reps</label>
-                       <input 
-                         type="number" 
-                         inputMode="numeric" 
-                         pattern="[0-9]*"
-                         placeholder="0" 
-                         value={newEntry.reps} 
-                         onChange={e => setNewEntry({ ...newEntry, reps: e.target.value })} 
-                         className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-xl font-black text-center text-indigo-600 outline-none focus:border-indigo-500 transition-colors placeholder-slate-200"
-                       />
-                    </div>
-                    {EXERCISES.find(e => e.id === newEntry.type)?.isWeighted && (
-                       <div className="relative flex-1 animate-fade-in">
-                         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest absolute -top-2 left-3 bg-white px-1 z-10">Kg</label>
+                 <div className="grid grid-cols-3 gap-3 mb-6">
+                   {EXERCISES.map(ex => {
+                     const isSelected = newEntry.type === ex.id;
+                     return (
+                       <button
+                         key={ex.id}
+                         onClick={() => setNewEntry({ ...newEntry, type: ex.id })}
+                         className={`flex flex-col items-center justify-center p-4 rounded-2xl transition-all border-2 ${isSelected ? 'border-indigo-600 bg-indigo-50' : 'border-transparent bg-slate-50 hover:bg-slate-100'}`}
+                       >
+                         <div className={`text-2xl mb-2 transition-transform ${isSelected ? 'scale-110' : 'grayscale opacity-50'}`}>{ex.icon}</div>
+                       </button>
+                     );
+                   })}
+                 </div>
+                 
+                 <div className="text-center mb-8">
+                    <span className="text-indigo-600 font-black uppercase text-sm tracking-widest border-b-2 border-indigo-100 pb-1">
+                      {EXERCISES.find(e => e.id === newEntry.type)?.label}
+                    </span>
+                 </div>
+
+                 <div className="space-y-4">
+                   <div className="relative group">
+                     <input 
+                        type="datetime-local" 
+                        value={toDateTimeLocal(entryDate)}
+                        onChange={handleDateChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                     />
+                     <div className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 font-bold text-slate-700 transition-colors text-sm flex items-center group-focus-within:border-indigo-500">
+                        {formatNiceDate(entryDate)}
+                     </div>
+                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                     </div>
+                   </div>
+
+                   <div className="flex gap-3">
+                      <div className="relative flex-1">
+                         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest absolute -top-2 left-3 bg-white px-1 z-10">Reps</label>
                          <input 
                            type="number" 
-                           inputMode="decimal" 
+                           inputMode="numeric" 
+                           pattern="[0-9]*"
                            placeholder="0" 
-                           value={newEntry.weight} 
-                           onChange={e => setNewEntry({ ...newEntry, weight: e.target.value })} 
-                           className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-xl font-black text-center text-emerald-600 outline-none focus:border-emerald-500 transition-colors placeholder-slate-200"
+                           value={newEntry.reps} 
+                           onChange={e => setNewEntry({ ...newEntry, reps: e.target.value })} 
+                           className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-xl font-black text-center text-indigo-600 outline-none focus:border-indigo-500 transition-colors placeholder-slate-200"
                          />
-                       </div>
-                    )}
+                      </div>
+                      {EXERCISES.find(e => e.id === newEntry.type)?.isWeighted && (
+                         <div className="relative flex-1 animate-fade-in">
+                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest absolute -top-2 left-3 bg-white px-1 z-10">Kg</label>
+                           <input 
+                             type="number" 
+                             inputMode="decimal" 
+                             placeholder="0" 
+                             value={newEntry.weight} 
+                             onChange={e => setNewEntry({ ...newEntry, weight: e.target.value })} 
+                             className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-xl font-black text-center text-emerald-600 outline-none focus:border-emerald-500 transition-colors placeholder-slate-200"
+                           />
+                         </div>
+                      )}
+                   </div>
                  </div>
-               </div>
 
-               <button 
-                 onClick={handleAddLog}
-                 disabled={!newEntry.reps}
-                 className="w-full mt-8 bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
-               >
-                 <span>Save Entry</span>
-                 
-               </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'settings' && (
-          <div className="space-y-6">
-            <header className="text-center font-bold text-2xl text-slate-800">Settings</header>
-
-            {/* Install App Button - Standalone Section */}
-            <div 
-               onClick={!isInstalled ? handleInstallClick : undefined}
-               className={`w-full bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center gap-4 shadow-sm transition-transform ${!isInstalled ? 'active:scale-95 cursor-pointer text-indigo-600' : 'text-emerald-600 cursor-default'}`}
-            >
-               <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isInstalled ? 'bg-emerald-50' : 'bg-indigo-50'}`}>
-                 {isInstalled ? (
-                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                 ) : (
-                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-                 )}
-               </div>
-               <div className="text-left flex-1">
-                 <p className="font-bold text-lg text-slate-800">{isInstalled ? "App Installed" : "Install App"}</p>
-                 <p className="text-[10px] font-bold uppercase text-slate-400">{isInstalled ? "Ready to use" : "Add to Home Screen"}</p>
-               </div>
-               {isInstalled ? (
                  <button 
-                    onClick={(e) => {
-                       e.stopPropagation();
-                       handleInstallClick();
-                    }}
-                    className="text-[9px] font-black uppercase tracking-wider border-2 border-emerald-100 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg active:opacity-70 hover:bg-emerald-100 transition-colors"
+                   onClick={handleAddLog}
+                   disabled={!newEntry.reps}
+                   className="w-full mt-8 bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
                  >
-                    Reinstall
+                   <span>Save Entry</span>
+                   
                  </button>
-               ) : (
-                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-               )}
+              </div>
             </div>
+          )}
 
-            {/* Data Management Section */}
-            <div>
-               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-4 mb-3">Data Management</h3>
-               <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
-                  
-                  {/* Account Status Button (Moved from Top) */}
-                  <div 
-                    className="w-full p-6 flex items-center gap-4 border-b border-slate-100 bg-white cursor-default"
-                  >
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg ${user ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                        {user ? user.email?.charAt(0).toUpperCase() : (
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                        )}
-                    </div>
-                    <div className="text-left flex-1">
-                        <p className="font-bold text-slate-800 truncate max-w-[150px] sm:max-w-xs">{user ? user.email : "Guest User"}</p>
-                        {user ? (
-                            <span className="inline-block mt-1 bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wide">
-                                Signed In
-                            </span>
-                        ) : (
-                            <p className="text-[10px] font-bold uppercase text-slate-400">
-                                Local Storage Only
-                            </p>
-                        )}
-                    </div>
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation(); // Stop div click if guest
-                            if (user) {
-                                if (logoutConfirm) {
-                                    handleLogout();
-                                } else {
-                                    setLogoutConfirm(true);
-                                    setTimeout(() => setLogoutConfirm(false), 3000);
-                                }
-                            } else {
-                                handleConnectCloud();
-                            }
-                        }}
-                        disabled={isLoggingOut}
-                        className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border-2 transition-all active:scale-95 ${
-                            user 
-                              ? (logoutConfirm ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-red-50 hover:text-red-600 hover:border-red-100 cursor-pointer') 
-                              : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100 cursor-pointer'
-                        }`}
+          {activeTab === 'settings' && (
+            <div className="space-y-6">
+              <header className="text-center font-bold text-2xl text-slate-800">Settings</header>
+
+              {/* Install App Button - Standalone Section */}
+              <div 
+                 onClick={!isInstalled ? handleInstallClick : undefined}
+                 className={`w-full bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center gap-4 shadow-sm transition-transform ${!isInstalled ? 'active:scale-95 cursor-pointer text-indigo-600' : 'text-emerald-600 cursor-default'}`}
+              >
+                 <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isInstalled ? 'bg-emerald-50' : 'bg-indigo-50'}`}>
+                   {isInstalled ? (
+                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                   ) : (
+                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                   )}
+                 </div>
+                 <div className="text-left flex-1">
+                   <p className="font-bold text-lg text-slate-800">{isInstalled ? "App Installed" : "Install App"}</p>
+                   <p className="text-[10px] font-bold uppercase text-slate-400">{isInstalled ? "Ready to use" : "Add to Home Screen"}</p>
+                 </div>
+                 {isInstalled ? (
+                   <button 
+                      onClick={(e) => {
+                         e.stopPropagation();
+                         handleInstallClick();
+                      }}
+                      className="text-[9px] font-black uppercase tracking-wider border-2 border-emerald-100 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg active:opacity-70 hover:bg-emerald-100 transition-colors"
+                   >
+                      Reinstall
+                   </button>
+                 ) : (
+                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                 )}
+              </div>
+
+              {/* Data Management Section */}
+              <div>
+                 <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-4 mb-3">Data Management</h3>
+                 <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
+                    
+                    {/* Account Status Button (Moved from Top) */}
+                    <div 
+                      className="w-full p-6 flex items-center gap-4 border-b border-slate-100 bg-white cursor-default"
                     >
-                        {isLoggingOut ? (
-                             <div className="w-4 h-4 border-2 border-slate-300 border-t-indigo-600 rounded-full animate-spin"></div>
-                        ) : (
-                            user ? (logoutConfirm ? "Confirm?" : "Log Out") : "Sign In"
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg ${user ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                          {user ? user.email?.charAt(0).toUpperCase() : (
+                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                          )}
+                      </div>
+                      <div className="text-left flex-1">
+                          <p className="font-bold text-slate-800 truncate max-w-[150px] sm:max-w-xs">{user ? user.email : "Guest User"}</p>
+                          {user ? (
+                              <span className="inline-block mt-1 bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wide">
+                                  Signed In
+                              </span>
+                          ) : (
+                              <p className="text-[10px] font-bold uppercase text-slate-400">
+                                  Local Storage Only
+                              </p>
+                          )}
+                      </div>
+                      <button
+                          onClick={(e) => {
+                              e.stopPropagation(); // Stop div click if guest
+                              if (user) {
+                                  if (logoutConfirm) {
+                                      handleLogout();
+                                  } else {
+                                      setLogoutConfirm(true);
+                                      setTimeout(() => setLogoutConfirm(false), 3000);
+                                  }
+                              } else {
+                                  handleConnectCloud();
+                              }
+                          }}
+                          disabled={isLoggingOut}
+                          className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border-2 transition-all active:scale-95 ${
+                              user 
+                                ? (logoutConfirm ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-red-50 hover:text-red-600 hover:border-red-100 cursor-pointer') 
+                                : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100 cursor-pointer'
+                          }`}
+                      >
+                          {isLoggingOut ? (
+                               <div className="w-4 h-4 border-2 border-slate-300 border-t-indigo-600 rounded-full animate-spin"></div>
+                          ) : (
+                              user ? (logoutConfirm ? "Confirm?" : "Log Out") : "Sign In"
+                          )}
+                      </button>
+                    </div>
+
+                    <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
+                    <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
+                    <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
+                    <button onClick={() => setShowClearDataConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600 border-b border-slate-100"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
+                    
+                    {/* Delete Account */}
+                    <button 
+                        onClick={() => user && setShowDeleteAccountConfirm(true)}
+                        disabled={!user} 
+                        className={`w-full p-6 flex items-center gap-4 transition-colors ${user ? 'hover:bg-red-50 text-red-600 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
+                    >
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${user ? 'bg-red-100' : 'bg-slate-100'}`}>💀</div>
+                        <div className="text-left flex-1 font-bold">Delete Account</div>
+                        {!user && (
+                          <div className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border-2 bg-slate-50 text-slate-400 border-slate-100">
+                              You need to be signed in
+                          </div>
                         )}
                     </button>
-                  </div>
+                 </div>
+              </div>
 
-                  <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
-                  <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
-                  <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
-                  <button onClick={() => setShowClearDataConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600 border-b border-slate-100"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
-                  
-                  {/* Delete Account */}
-                  <button 
-                      onClick={() => user && setShowDeleteAccountConfirm(true)}
-                      disabled={!user} 
-                      className={`w-full p-6 flex items-center gap-4 transition-colors ${user ? 'hover:bg-red-50 text-red-600 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
-                  >
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${user ? 'bg-red-100' : 'bg-slate-100'}`}>💀</div>
-                      <div className="text-left flex-1 font-bold">Delete Account</div>
-                      {!user && (
-                        <div className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border-2 bg-slate-50 text-slate-400 border-slate-100">
-                            You need to be signed in
-                        </div>
-                      )}
-                  </button>
-               </div>
-            </div>
-
-            {/* Privacy & Security Section */}
-            <div>
-               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-4 mb-3">Privacy & Security</h3>
-               <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
-                  <button onClick={hasBiometrics ? handleDisableSecurity : handleEnableSecurity} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasBiometrics ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
-                      {hasBiometrics ? (
-                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-                      ) : (
-                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                      )}
-                    </div>
-                    <div className="text-left flex-1 font-bold">
-                      {hasBiometrics ? "Disable App Lock" : "Enable App Lock & Biometrics"}
-                    </div>
-                    {!hasBiometrics && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>}
-                  </button>
-                  
-                  {hasBiometrics && (
-                    <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
-                       <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div>
-                       <div className="text-left flex-1 font-bold">Change PIN</div>
+              {/* Privacy & Security Section */}
+              <div>
+                 <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-4 mb-3">Privacy & Security</h3>
+                 <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
+                    <button onClick={hasBiometrics ? handleDisableSecurity : handleEnableSecurity} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasBiometrics ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
+                        {hasBiometrics ? (
+                           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+                        ) : (
+                           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        )}
+                      </div>
+                      <div className="text-left flex-1 font-bold">
+                        {hasBiometrics ? "Disable App Lock" : "Enable App Lock & Biometrics"}
+                      </div>
+                      {!hasBiometrics && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>}
                     </button>
-                  )}
-                  
-                  <button onClick={() => setShowPrivacyDialog(true)} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 text-slate-800 transition-colors">
-                      <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🛡️</div>
-                      <div className="text-left flex-1 font-bold">Data & Privacy Policy</div>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                  </button>
-               </div>
+                    
+                    {hasBiometrics && (
+                      <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
+                         <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div>
+                         <div className="text-left flex-1 font-bold">Change PIN</div>
+                      </button>
+                    )}
+                    
+                    <button onClick={() => setShowPrivacyDialog(true)} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 text-slate-800 transition-colors">
+                        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🛡️</div>
+                        <div className="text-left flex-1 font-bold">Data & Privacy Policy</div>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </button>
+                 </div>
+              </div>
+              
+              <div className="text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest pb-4 pt-4">
+                 v{APP_VERSION}
+              </div>
             </div>
-            
-            <div className="text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest pb-4 pt-4">
-               v{APP_VERSION}
-            </div>
-          </div>
-        )}
-      </Layout>
+          )}
+        </Layout>
+      )}
       
       {/* Sync Error Dialog */}
       {showSyncErrorDialog && (
@@ -1287,6 +1337,24 @@ const App: React.FC = () => {
               </button>
               <button onClick={handleConfirmClearData} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors">
                 Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog - Delete Entry */}
+      {logToDelete && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm overlay-animate" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center dialog-animate">
+            <h2 className="text-xl font-black text-slate-800">Remove Entry?</h2>
+            <p className="text-slate-500 mt-2 text-sm">Are you sure you want to delete this workout entry?</p>
+            <div className="mt-6 flex gap-3">
+              <button onClick={() => setLogToDelete(null)} className="flex-1 bg-slate-100 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors">
+                Cancel
+              </button>
+              <button onClick={performDeleteLog} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors">
+                Delete
               </button>
             </div>
           </div>
@@ -1346,7 +1414,11 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {toastMessage && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-3 shadow-2xl toast-animate">{toastMessage}</div>}
+      {toastMessage && (
+        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold flex items-center gap-3 shadow-2xl toast-animate text-white ${toastMessage.startsWith('✓') ? 'bg-emerald-600' : 'bg-slate-900'}`}>
+          {toastMessage}
+        </div>
+      )}
     </>
   );
 };
