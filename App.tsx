@@ -12,7 +12,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '1.9.6';
+const APP_VERSION = '2.0.0';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -866,7 +866,7 @@ const App: React.FC = () => {
               {onboardingStep === 'welcome' && (
                 <div className="flex flex-col gap-4">
                   <button onClick={() => setOnboardingStep('email')} className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl">
-                    Sign In / Sync
+                    Sign In
                   </button>
                   <button onClick={handleSkipAuth} className="w-full bg-indigo-500/50 text-indigo-100 py-5 rounded-2xl font-bold border-2 border-indigo-400/30 hover:bg-indigo-500/70">
                     Use Offline
@@ -1155,7 +1155,7 @@ const App: React.FC = () => {
                         <p className="font-bold text-slate-800 truncate max-w-[150px] sm:max-w-xs">{user ? user.email : "Guest User"}</p>
                         {user ? (
                             <span className="inline-block mt-1 bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wide">
-                                Cloud Connected
+                                Signed In
                             </span>
                         ) : (
                             <p className="text-[10px] font-bold uppercase text-slate-400">
@@ -1187,7 +1187,7 @@ const App: React.FC = () => {
                         {isLoggingOut ? (
                              <div className="w-4 h-4 border-2 border-slate-300 border-t-indigo-600 rounded-full animate-spin"></div>
                         ) : (
-                            user ? (logoutConfirm ? "Confirm?" : "Log Out") : "Connect"
+                            user ? (logoutConfirm ? "Confirm?" : "Log Out") : "Sign In"
                         )}
                     </button>
                   </div>
@@ -1207,7 +1207,7 @@ const App: React.FC = () => {
                       <div className="text-left flex-1 font-bold">Delete Account</div>
                       {!user && (
                         <div className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border-2 bg-slate-50 text-slate-400 border-slate-100">
-                            You need to be connected
+                            You need to be signed in
                         </div>
                       )}
                   </button>
