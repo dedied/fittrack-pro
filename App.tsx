@@ -12,7 +12,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.1.7';
+const APP_VERSION = '2.1.9';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -224,12 +224,12 @@ const App: React.FC = () => {
     }
   }, [appState, user, supabase]);
 
-  const syncWithCloud = async () => {
-    if (!supabase || !user) return;
+  const syncWithCloud = async (): Promise<boolean> => {
+    if (!supabase || !user) return false;
     
     if (!navigator.onLine) {
         setSyncStatus('offline');
-        return;
+        return false;
     }
 
     setSyncStatus('syncing');
@@ -296,12 +296,14 @@ const App: React.FC = () => {
       });
 
       setSyncStatus('synced');
+      return true;
     } catch (err: any) {
       console.error("Sync error:", err);
       setSyncStatus('error');
       setSyncError(err.message || "An unknown error occurred during sync.");
       setToastMessage("⚠️ Sync failed");
       setTimeout(() => setToastMessage(null), 3000);
+      return false;
     }
   };
 
@@ -1220,7 +1222,7 @@ const App: React.FC = () => {
                               </span>
                           ) : (
                               <p className="text-[10px] font-bold uppercase text-slate-400">
-                                  Local Storage Only
+                                  Sign in to sync
                               </p>
                           )}
                       </div>
@@ -1252,6 +1254,31 @@ const App: React.FC = () => {
                           )}
                       </button>
                     </div>
+
+                    <button 
+                        onClick={async () => {
+                            if (user) {
+                                const success = await syncWithCloud();
+                                if (success) {
+                                    setToastMessage("✓ Sync Complete");
+                                    setTimeout(() => setToastMessage(null), 3000);
+                                }
+                            }
+                        }}
+                        disabled={!user || syncStatus === 'syncing'}
+                        className={`w-full p-6 flex items-center gap-4 border-b border-slate-100 transition-colors ${user ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
+                    >
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${user ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100'}`}>🔄</div>
+                        <div className="text-left flex-1 font-bold">Perform Manual Data Sync</div>
+                        {!user && (
+                            <div className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border-2 bg-slate-50 text-slate-400 border-slate-100">
+                                Sign in required
+                            </div>
+                        )}
+                        {syncStatus === 'syncing' && (
+                             <div className="w-4 h-4 border-2 border-slate-300 border-t-indigo-600 rounded-full animate-spin"></div>
+                        )}
+                    </button>
 
                     <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
                     <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
