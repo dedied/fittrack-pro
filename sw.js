@@ -1,5 +1,4 @@
-
-const CACHE_NAME = 'fittrack-v1.9.3';
+const CACHE_NAME = 'fittrack-v1.9.4';
 
 // We determine the base path dynamically or use relative paths
 const ASSETS_TO_PRECACHE = [
@@ -37,22 +36,32 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   // For navigation requests (HTML), try Network first, then Cache
-  // This ensures updates are seen if online, but works offline.
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then((response) => {
+           // If online and valid, clone to cache
            return caches.open(CACHE_NAME).then((cache) => {
              cache.put(request, response.clone());
              return response;
            });
         })
         .catch(() => {
-          // Fallback to cached index.html
-          return caches.match('./index.html', { ignoreSearch: true })
-            .then(response => {
-               return response || caches.match('./', { ignoreSearch: true });
-            });
+          // If offline or fetch fails, return the cached index.html.
+          // We try multiple variants to be safe against base path issues.
+          return caches.open(CACHE_NAME).then((cache) => {
+            return cache.match('./index.html', { ignoreSearch: true })
+              .then(response => {
+                if (response) return response;
+                // Fallback 1: Root
+                return cache.match('./', { ignoreSearch: true });
+              })
+              .then(response => {
+                 if (response) return response;
+                 // Fallback 2: Absolute index.html if stored differently
+                 return cache.match('index.html', { ignoreSearch: true });
+              });
+          });
         })
     );
     return;

@@ -11,7 +11,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.2.2';
+const APP_VERSION = '2.2.3';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -1580,7 +1580,7 @@ const App: React.FC = () => {
       )}
 
       {toastMessage && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold flex items-center gap-3 shadow-2xl toast-animate text-white bg-slate-900">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold flex items-center gap-3 shadow-2xl toast-animate text-white bg-slate-900 border border-slate-700/50 backdrop-blur-md">
           {toastMessage}
         </div>
       )}

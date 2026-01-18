@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -36,8 +35,9 @@
       width: 100%;
       position: fixed;
     }
+    /* Updated Toast Animation: Top Down */
     @keyframes toast-in {
-      from { transform: translateY(100%) translateX(-50%); opacity: 0; }
+      from { transform: translateY(-100%) translateX(-50%); opacity: 0; }
       to { transform: translateY(0) translateX(-50%); opacity: 1; }
     }
     .toast-animate {
