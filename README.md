@@ -24,7 +24,7 @@ FitTrack Pro uses an **Offline-First** approach with a "Cloud-Wins" conflict res
     - **Claims Ownership:** Any logs created while in "Guest Mode" are automatically assigned to the user upon login.
 3.  **Conflict Resolution:**
     - If a specific log ID exists in both Local Storage and the Cloud, **the Cloud version is treated as the source of truth** and overwrites the local version.
-    - This prevents stale local data on one device from overwriting edits made on another device.
+    - This prevents stale local data on one device from overwriting edits made on another device...
 
 ## Database Setup (Supabase)
 

@@ -79,6 +79,8 @@ const App: React.FC = () => {
   const [emailInput, setEmailInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutConfirm, setLogoutConfirm] = useState(false); // UI state for logout button
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'email' | 'otp'>('welcome');
   const [user, setUser] = useState<any>(null);
   const [resendTimer, setResendTimer] = useState(0);
@@ -407,14 +409,59 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    if (window.confirm("Log out?")) {
-      await secureStore.clear();
-      if (supabase) await supabase.auth.signOut();
-      setUser(null); setSyncStatus('unconfigured');
-      setOnboardingStep('email'); setEmailInput(''); setOtpInput('');
-      setHasBiometrics(false);
-      setAppState('onboarding');
-      // Note: we don't clear logs here to preserve local data, but sync will stop
+    // Note: Confirmation is now handled by the UI button state (logoutConfirm) 
+    // to avoid window.confirm blocking issues in PWA.
+
+    setIsLoggingOut(true);
+
+    // Helper to timeout the network request so we don't hang forever
+    const withTimeout = (promise: Promise<any>, ms: number) => {
+        return Promise.race([
+            promise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), ms))
+        ]);
+    };
+
+    try {
+        // 1. Attempt Server Sign Out (Timeboxed)
+        if (supabase) {
+            try {
+                // Wait max 2 seconds for server to respond
+                await withTimeout(supabase.auth.signOut(), 2000);
+            } catch (err) {
+                console.warn("Supabase signout timed out or failed:", err);
+                // Continue to local cleanup regardless of server error
+            }
+        }
+        
+        // 2. Clear Local Secure Storage
+        try {
+           await secureStore.clear();
+        } catch (err) {
+            console.error("Secure store clear failed:", err);
+        }
+        
+        // 3. Clear Local Flags
+        localStorage.removeItem('fit_skip_auth');
+
+        // 4. Reset Application State
+        setUser(null);
+        setSyncStatus('unconfigured');
+        setHasBiometrics(false);
+        setOnboardingStep('email');
+        setEmailInput('');
+        setOtpInput('');
+        
+        // 5. Navigate to Onboarding
+        setAppState('onboarding');
+
+    } catch (e) {
+        console.error("Critical logout error", e);
+        // Fallback safety
+        setAppState('onboarding');
+    } finally {
+        setIsLoggingOut(false);
+        setLogoutConfirm(false);
     }
   };
 
@@ -625,6 +672,49 @@ const App: React.FC = () => {
   useEffect(() => { const h = (e: any) => { e.preventDefault(); setDeferredPrompt(e); }; window.addEventListener('beforeinstallprompt', h); return () => window.removeEventListener('beforeinstallprompt', h); }, []);
   const handleInstallClick = async () => { if (deferredPrompt) { await deferredPrompt.prompt(); } else { alert("To install, use your browser's 'Add to Home Screen' feature."); }};
 
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value) {
+      setEntryDate(new Date(e.target.value));
+    }
+  };
+
+  const handleAddLog = async () => {
+    if (!newEntry.reps) return;
+    const reps = parseInt(newEntry.reps);
+    if (isNaN(reps) || reps <= 0) return;
+
+    const log: WorkoutLog = {
+      id: generateId(),
+      date: entryDate.toISOString(),
+      type: newEntry.type,
+      reps: reps,
+      weight: newEntry.weight ? parseFloat(newEntry.weight) : undefined,
+      owner_id: user?.id,
+    };
+
+    const updatedLogs = [log, ...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    setLogs(updatedLogs);
+    setToastMessage("✓ Logged!");
+    setTimeout(() => setToastMessage(null), 2000);
+    
+    setNewEntry(prev => ({ ...prev, reps: '' }));
+
+    if (user && supabase) {
+       if (navigator.onLine) {
+          setSyncStatus('syncing');
+          const { error } = await supabase.from('workouts').insert(log);
+          if (error) {
+             setSyncStatus('error');
+             console.error(error);
+          } else {
+             setSyncStatus('synced');
+          }
+       } else {
+          setSyncStatus('offline');
+       }
+    }
+  };
+
   const filteredStats = useMemo(() => {
     const now = new Date(); return EXERCISES.map(ex => ({ ...ex, totalReps: logs.filter(log => {
       if (log.type !== ex.id) return false; const logDate = new Date(log.date);
@@ -635,6 +725,36 @@ const App: React.FC = () => {
         default: return logDate.getFullYear() === now.getFullYear();
       }}).reduce((acc, curr) => acc + curr.reps, 0)}));
   }, [logs, totalsTimeFrame]);
+
+  const maxStats = useMemo(() => {
+    return EXERCISES.map(ex => {
+      const exerciseLogs = logs.filter(log => log.type === ex.id);
+      
+      let maxRep = 0;
+      let maxRepDate: string | undefined;
+      let maxWeight = 0;
+      let maxWeightDate: string | undefined;
+
+      exerciseLogs.forEach(log => {
+        if (log.reps > maxRep) {
+          maxRep = log.reps;
+          maxRepDate = log.date;
+        }
+        if (log.weight && (log.weight > maxWeight)) {
+          maxWeight = log.weight;
+          maxWeightDate = log.date;
+        }
+      });
+
+      return {
+        ...ex,
+        maxRep,
+        maxRepDate,
+        maxWeight,
+        maxWeightDate
+      };
+    });
+  }, [logs]);
 
   // Derived state for the history view
   const historyLogs = useMemo(() => {
@@ -651,66 +771,6 @@ const App: React.FC = () => {
       }
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [logs, viewingHistory, totalsTimeFrame]);
-
-  const handleAddLog = async (e: React.MouseEvent) => {
-    e.stopPropagation(); const repsNum = parseInt(newEntry.reps); if (isNaN(repsNum) || repsNum <= 0) return;
-    const log: WorkoutLog = { 
-        id: generateId(), 
-        date: entryDate.toISOString(), 
-        type: newEntry.type, 
-        reps: repsNum, 
-        weight: parseFloat(newEntry.weight) || undefined, 
-        owner_id: user?.id || undefined 
-    };
-    if ('vibrate' in navigator) navigator.vibrate(25); 
-    setLogs(prev => [log, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())); 
-    setNewEntry({ type: newEntry.type, reps: '', weight: '' });
-    setEntryDate(new Date()); // Reset date to now for the next entry
-    setToastMessage("✓ Logged!");
-    if (supabase && user) {
-      setSyncStatus('syncing'); 
-      const { error } = await supabase.from('workouts').insert([log]); 
-      if (error) {
-         setSyncStatus('error');
-         setSyncError(error.message);
-         setToastMessage("⚠️ Sync failed");
-         setTimeout(() => setToastMessage(null), 3000);
-      } else {
-         setSyncStatus('synced');
-         setSyncError(null);
-      }
-    }
-    setTimeout(() => { if (toastMessage === "✓ Logged!") setToastMessage(null); setActiveTab('dashboard'); }, 1500);
-  };
-  
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.value) {
-      setEntryDate(new Date(e.target.value));
-    }
-  };
-
-
-  const maxStats = useMemo(() => EXERCISES.map(ex => {
-    const exerciseLogs = logs.filter(log => log.type === ex.id);
-    if (exerciseLogs.length === 0) return { ...ex, maxRep: 0, maxRepDate: null, maxWeight: 0, maxWeightDate: null };
-
-    // Find Log with Max Reps (prefer most recent on tie)
-    const maxRepLog = exerciseLogs.reduce((prev, current) => (prev.reps >= current.reps ? prev : current), exerciseLogs[0]);
-    
-    // Find Log with Max Weight (prefer most recent on tie)
-    let maxWeightLog = null;
-    if (ex.isWeighted) {
-        maxWeightLog = exerciseLogs.reduce((prev, current) => ((prev.weight || 0) >= (current.weight || 0) ? prev : current), exerciseLogs[0]);
-    }
-
-    return { 
-      ...ex, 
-      maxRep: maxRepLog.reps, 
-      maxRepDate: maxRepLog.date, 
-      maxWeight: maxWeightLog ? (maxWeightLog.weight || 0) : 0,
-      maxWeightDate: maxWeightLog ? maxWeightLog.date : null 
-    };
-  }), [logs]);
 
   // --- Render Logic based on AppState ---
   
@@ -768,7 +828,20 @@ const App: React.FC = () => {
               {onboardingStep === 'email' && (
                 <form onSubmit={handleRequestOtp} className="space-y-4">
                   <input type="email" required value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="Email Address" className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-5 text-white placeholder-white/40 font-bold outline-none focus:border-white/60 text-center" />
-                  <button type="submit" disabled={resendTimer > 0} className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl disabled:opacity-50">{resendTimer > 0 ? `Wait ${resendTimer}s` : "Send Code"}</button>
+                  <button 
+                    type="submit" 
+                    disabled={resendTimer > 0 || isVerifying} 
+                    className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl disabled:opacity-50 flex items-center justify-center gap-3 transition-all"
+                  >
+                    {isVerifying ? (
+                      <>
+                        <div className="w-5 h-5 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                        <span>Sending...</span>
+                      </>
+                    ) : (
+                      resendTimer > 0 ? `Wait ${resendTimer}s` : "Send Code"
+                    )}
+                  </button>
                   <button type="button" onClick={() => setOnboardingStep('welcome')} className="w-full py-2 text-indigo-200 font-medium">Back</button>
                 </form>
               )}
@@ -776,7 +849,20 @@ const App: React.FC = () => {
               {onboardingStep === 'otp' && (
                 <form onSubmit={handleVerifyOtp} className="space-y-4">
                   <input type="text" inputMode="numeric" required value={otpInput} onChange={e => setOtpInput(e.target.value)} placeholder="000000" className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-5 text-white placeholder-white/40 font-bold outline-none focus:border-white/60 text-center tracking-widest text-4xl" />
-                  <button type="submit" className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl">Verify</button>
+                  <button 
+                    type="submit" 
+                    disabled={isVerifying} 
+                    className="w-full bg-white text-indigo-600 py-5 rounded-2xl font-black shadow-xl disabled:opacity-50 flex items-center justify-center gap-3 transition-all"
+                  >
+                    {isVerifying ? (
+                      <>
+                        <div className="w-5 h-5 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      "Verify"
+                    )}
+                  </button>
                   <button type="button" onClick={() => setOnboardingStep('email')} className="w-full py-2 text-indigo-200 font-medium">Back</button>
                 </form>
               )}
@@ -932,7 +1018,25 @@ const App: React.FC = () => {
             {user ? (
               <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
                 <div className="flex items-center gap-3"><div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-black text-lg">{user.email?.charAt(0).toUpperCase()}</div><div><p className="font-bold text-slate-800 truncate max-w-[150px]">{user.email}</p><p className="text-[10px] text-emerald-500 font-bold uppercase">Cloud Connected</p></div></div>
-                <button onClick={handleLogout} className="text-[10px] font-black text-slate-400 uppercase border-2 border-slate-50 px-4 py-2 rounded-xl hover:text-red-500">Sign Out</button>
+                <button 
+                  onClick={() => {
+                     if (logoutConfirm) {
+                        handleLogout();
+                     } else {
+                        setLogoutConfirm(true);
+                        setTimeout(() => setLogoutConfirm(false), 3000);
+                     }
+                  }} 
+                  disabled={isLoggingOut}
+                  className={`text-[10px] font-black uppercase border-2 px-4 py-2 rounded-xl disabled:opacity-50 transition-colors flex items-center gap-2 ${logoutConfirm ? 'bg-red-500 text-white border-red-500' : 'text-slate-400 border-slate-50 hover:text-red-500'}`}
+                >
+                  {isLoggingOut ? (
+                    <>
+                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                        <span>Exiting...</span>
+                    </>
+                  ) : (logoutConfirm ? 'Confirm?' : 'Sign Out')}
+                </button>
               </div>
             ) : (
               <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
@@ -964,7 +1068,7 @@ const App: React.FC = () => {
               <button onClick={hasBiometrics ? handleDisableSecurity : handleEnableSecurity} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasBiometrics ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
                   {hasBiometrics ? (
-                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
                   ) : (
                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                   )}
@@ -986,7 +1090,16 @@ const App: React.FC = () => {
               <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
               <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
               <button onClick={() => setShowClearDataConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600 border-b border-slate-100"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
-              <button onClick={() => setShowDeleteAccountConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">💀</div><div className="text-left flex-1 font-bold">Delete Account</div></button>
+              <button 
+                onClick={user ? () => setShowDeleteAccountConfirm(true) : handleConnectCloud} 
+                className={`w-full p-6 flex items-center gap-4 ${user ? 'hover:bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-400'}`}
+              >
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${user ? 'bg-red-100' : 'bg-slate-100'}`}>💀</div>
+                <div className="text-left flex-1 font-bold">Delete Account</div>
+                {!user && (
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg">Connect</span>
+                )}
+              </button>
             </div>
           </div>
         )}
