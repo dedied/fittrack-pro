@@ -12,11 +12,13 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.1.9';
+const APP_VERSION = '2.2.1';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type AppState = 'loading' | 'locked' | 'unlocked' | 'onboarding' | 'creatingPin' | 'confirmingPinForBio';
+type SyncResult = 'success' | 'error' | 'offline' | 'conflict_cloud_empty';
+
 const MAX_PIN_ATTEMPTS = 5;
 
 const generateId = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).substring(2)}`;
@@ -83,6 +85,7 @@ const App: React.FC = () => {
   // Sync Error Handling
   const [syncError, setSyncError] = useState<string | null>(null);
   const [showSyncErrorDialog, setShowSyncErrorDialog] = useState(false);
+  const [showCloudWipeDialog, setShowCloudWipeDialog] = useState(false);
 
   // History Drill Down State
   const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
@@ -224,12 +227,14 @@ const App: React.FC = () => {
     }
   }, [appState, user, supabase]);
 
-  const syncWithCloud = async (): Promise<boolean> => {
-    if (!supabase || !user) return false;
+  // Note: 'skipConflictCheck' is a safety valve used by the Dialog itself 
+  // to force an upload when the user explicitly chooses "Upload Device Data".
+  const syncWithCloud = async (skipConflictCheck = false): Promise<SyncResult> => {
+    if (!supabase || !user) return 'error';
     
     if (!navigator.onLine) {
         setSyncStatus('offline');
-        return false;
+        return 'offline';
     }
 
     setSyncStatus('syncing');
@@ -248,8 +253,18 @@ const App: React.FC = () => {
       const { data: cloudLogs, error: fetchError } = await supabase.from('workouts').select('*');
       if (fetchError) throw fetchError;
       
-      const cloudMap = new Map((cloudLogs || []).map(l => [l.id, l]));
       const currentLogs = logsRef.current;
+
+      // --- CONFLICT CHECK (RUNS ON EVERY SYNC) ---
+      // If the cloud is empty, but we have local data, there's a risk of "Zombie Data".
+      // We pause and ask the user, unless they have already confirmed they want to upload (skipConflictCheck).
+      if (!skipConflictCheck && (!cloudLogs || cloudLogs.length === 0) && currentLogs.length > 0) {
+          setSyncStatus('synced'); // Reset status visually so it doesn't spin forever
+          setShowCloudWipeDialog(true);
+          return 'conflict_cloud_empty';
+      }
+
+      const cloudMap = new Map((cloudLogs || []).map(l => [l.id, l]));
 
       // 2. Identify Local Data to Upload
       //    - Items that are NOT in the cloud map (newly created offline)
@@ -296,18 +311,18 @@ const App: React.FC = () => {
       });
 
       setSyncStatus('synced');
-      return true;
+      return 'success';
     } catch (err: any) {
       console.error("Sync error:", err);
       setSyncStatus('error');
       setSyncError(err.message || "An unknown error occurred during sync.");
       setToastMessage("⚠️ Sync failed");
       setTimeout(() => setToastMessage(null), 3000);
-      return false;
+      return 'error';
     }
   };
 
-  const handleSyncClick = () => {
+  const handleSyncClick = async () => {
     if (syncStatus === 'error') {
       setShowSyncErrorDialog(true);
     } else if (syncStatus === 'synced') {
@@ -317,12 +332,38 @@ const App: React.FC = () => {
       alert("You are currently offline. Sync will resume automatically when connection is restored.");
       // Attempt to sync anyway in case browser status is stale
       syncWithCloud();
+    } else {
+        // Normal manual trigger
+        const result = await syncWithCloud();
+        if (result === 'success') {
+            setToastMessage("✓ Sync Complete");
+            setTimeout(() => setToastMessage(null), 3000);
+        }
     }
   };
 
   const handleRetrySync = () => {
     setShowSyncErrorDialog(false);
     syncWithCloud();
+  };
+
+  // Called when user chooses "Delete Local" in conflict dialog
+  const handleOverwriteLocal = () => {
+    setShowCloudWipeDialog(false);
+    setLogs([]); // Clear local
+    setToastMessage("Device data cleared to match Cloud.");
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Called when user chooses "Upload" in conflict dialog
+  const handleKeepLocal = async () => {
+    setShowCloudWipeDialog(false);
+    // Call sync again, but pass TRUE to skip the conflict check we just resolved
+    const result = await syncWithCloud(true); 
+    if (result === 'success') {
+        setToastMessage("✓ Restored to Cloud");
+        setTimeout(() => setToastMessage(null), 3000);
+    }
   };
 
   useEffect(() => localStorage.setItem('fit_logs', JSON.stringify(logs)), [logs]);
@@ -807,7 +848,7 @@ const App: React.FC = () => {
              console.error(error);
           } else {
              // Sync to ensure we get updates from other devices immediately
-             await syncWithCloud();
+             await syncWithCloud(false);
           }
        } else {
           setSyncStatus('offline');
@@ -1258,8 +1299,8 @@ const App: React.FC = () => {
                     <button 
                         onClick={async () => {
                             if (user) {
-                                const success = await syncWithCloud();
-                                if (success) {
+                                const result = await syncWithCloud();
+                                if (result === 'success') {
                                     setToastMessage("✓ Sync Complete");
                                     setTimeout(() => setToastMessage(null), 3000);
                                 }
@@ -1358,6 +1399,32 @@ const App: React.FC = () => {
               </button>
               <button onClick={handleRetrySync} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors">
                 Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cloud Wipe Conflict Dialog */}
+      {showCloudWipeDialog && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm overlay-animate" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center dialog-animate">
+            <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4 text-amber-600">
+               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <h2 className="text-xl font-black text-slate-800">Cloud Storage is Empty</h2>
+            <p className="text-slate-500 mt-4 text-sm leading-relaxed">
+              We found data on this device, but your cloud account is empty. This usually happens if you cleared your data on another device.
+            </p>
+            <p className="text-slate-800 font-bold text-sm mt-4">
+              What would you like to do?
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              <button onClick={handleKeepLocal} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">
+                Upload Device Data
+              </button>
+              <button onClick={handleOverwriteLocal} className="w-full bg-slate-100 text-slate-600 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors">
+                Clear Device Data
               </button>
             </div>
           </div>
