@@ -12,7 +12,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.1.2';
+const APP_VERSION = '2.1.4';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -553,7 +553,7 @@ const App: React.FC = () => {
         }
     }
 
-    setToastMessage("✓ Entry removed"); // Added tick for green toast
+    setToastMessage("✓ Entry removed"); 
     setTimeout(() => setToastMessage(null), 2000);
   };
 
@@ -793,7 +793,8 @@ const App: React.FC = () => {
              setSyncStatus('error');
              console.error(error);
           } else {
-             setSyncStatus('synced');
+             // Sync to ensure we get updates from other devices immediately
+             await syncWithCloud();
           }
        } else {
           setSyncStatus('offline');
