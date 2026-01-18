@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4';
 import Layout, { TabType, SyncStatus } from './components/Layout';
@@ -12,7 +11,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.2.1';
+const APP_VERSION = '2.2.2';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -778,6 +777,14 @@ const App: React.FC = () => {
         if (newLogs.length > 0) {
           setLogs(prev => [...newLogs, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
           setToastMessage(`✓ Imported ${newLogs.length} logs!`);
+          
+          // Trigger sync if user is logged in
+          if (user && supabase && navigator.onLine) {
+            // Wait for logsRef to update via useEffect
+            setTimeout(() => {
+                syncWithCloud(true); // Skip conflict check to ensure imported data uploads even if cloud is empty
+            }, 100);
+          }
         } else {
           setToastMessage('No valid logs found in file.');
         }
