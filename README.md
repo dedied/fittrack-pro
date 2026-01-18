@@ -110,6 +110,7 @@ grant execute on function public.delete_user() to authenticated;
 ## 🤖 Created with Google AI Studio, GitHub, GitHub Pages and Supabase
 
 The coding for this project was entirely done using Google AI Studio.
+See the end result at the [GitHub page](https://dedied.github.io/fittrack-pro/).
 
 If you encounter rate limits when trying to sync changes directly to GitHub from AI Studio, you can download the project files and use the script below to automate the syncing process locally.
 

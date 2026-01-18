@@ -12,7 +12,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.1.4';
+const APP_VERSION = '2.1.6';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -1049,13 +1049,13 @@ const App: React.FC = () => {
                         <div className="text-right flex flex-col items-end">
                            <p className="text-xl font-black text-indigo-600 leading-none">{ex.maxRep}</p>
                            <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Reps</p>
-                           {ex.maxRepDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxRepDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxRepDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
+                           {ex.maxRepDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5 whitespace-nowrap">{new Date(ex.maxRepDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxRepDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
                         </div>
                         {ex.isWeighted && (
                            <div className="text-right border-l pl-4 flex flex-col items-end">
                              <p className="text-xl font-black text-emerald-600 leading-none">{ex.maxWeight}kg</p>
                              <p className="text-[8px] text-slate-400 uppercase font-bold mt-1">Weight</p>
-                             {ex.maxWeightDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{new Date(ex.maxWeightDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxWeightDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
+                             {ex.maxWeightDate && <p className="text-[9px] text-slate-400 font-medium mt-0.5 whitespace-nowrap">{new Date(ex.maxWeightDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}, {new Date(ex.maxWeightDate).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12: false})}</p>}
                            </div>
                         )}
                       </div>
@@ -1416,7 +1416,7 @@ const App: React.FC = () => {
       )}
 
       {toastMessage && (
-        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold flex items-center gap-3 shadow-2xl toast-animate text-white ${toastMessage.startsWith('✓') ? 'bg-emerald-600' : 'bg-slate-900'}`}>
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold flex items-center gap-3 shadow-2xl toast-animate text-white bg-slate-900">
           {toastMessage}
         </div>
       )}
