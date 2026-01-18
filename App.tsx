@@ -12,6 +12,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
+const APP_VERSION = '1.9.3';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -1100,6 +1101,10 @@ const App: React.FC = () => {
                   <span className="text-[10px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg">Connect</span>
                 )}
               </button>
+            </div>
+            
+            <div className="text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest pb-4">
+               v{APP_VERSION}
             </div>
           </div>
         )}
