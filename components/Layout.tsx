@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 export type TabType = 'dashboard' | 'add' | 'settings' | 'auth';
 
@@ -20,6 +20,28 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
   const [isRefreshing, setIsRefreshing] = useState(false);
   const scrollRef = useRef<HTMLElement>(null);
   const touchStartRef = useRef<number>(0);
+  
+  // Use 100dvh as initial fallback, but prefer pixel values from visualViewport API
+  // to ensure layout shrinks when software keyboard opens on mobile.
+  const [viewportHeight, setViewportHeight] = useState('100dvh');
+
+  useEffect(() => {
+    if (!window.visualViewport) return;
+
+    const handleResize = () => {
+      // Set height to the visible viewport height (handles keyboard)
+      setViewportHeight(`${window.visualViewport!.height}px`);
+    };
+
+    window.visualViewport.addEventListener('resize', handleResize);
+    window.visualViewport.addEventListener('scroll', handleResize); // Sometimes needed on iOS
+    handleResize(); // Initial set
+
+    return () => {
+        window.visualViewport!.removeEventListener('resize', handleResize);
+        window.visualViewport!.removeEventListener('scroll', handleResize);
+    };
+  }, []);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (scrollRef.current && scrollRef.current.scrollTop === 0 && !isRefreshing) {
@@ -73,7 +95,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
   };
 
   return (
-    <div className="h-[100dvh] w-full flex flex-col bg-slate-50 overflow-hidden relative">
+    <div 
+      className="w-full flex flex-col bg-slate-50 overflow-hidden relative"
+      style={{ height: viewportHeight }}
+    >
       <div 
         className="absolute left-0 right-0 flex justify-center pointer-events-none z-20"
         style={{ 

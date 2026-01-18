@@ -107,9 +107,9 @@ revoke all on function public.delete_user() from public;
 grant execute on function public.delete_user() to authenticated;
 ```
 
-## 🤖 Created with Google AI Studio
+## 🤖 Created with Google AI Studio, GitHub, GitHub Pages and Supabase
 
-This project was entirely crafted using Google AI Studio.
+The coding for this project was entirely done using Google AI Studio.
 
 If you encounter rate limits when trying to sync changes directly to GitHub from AI Studio, you can download the project files and use the script below to automate the syncing process locally.
 
@@ -154,7 +154,7 @@ mkdir -p "$TEMP_DIR"
 unzip "$ZIP_FILE" -d "$TEMP_DIR"
 
 # Sync extracted files into the Git repo
-rsync -av --delete --exclude='.git' --exclude='.github' "$TEMP_DIR"/ "$PROJECT_DIR"/
+rsync -av --delete --exclude='.git' "$TEMP_DIR"/ "$PROJECT_DIR"/
 
 # Move into the project directory
 cd "$PROJECT_DIR"

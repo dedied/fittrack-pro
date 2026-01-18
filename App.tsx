@@ -32,6 +32,21 @@ const toDateTimeLocal = (date: Date) => {
     return `${YYYY}-${MM}-${DD}T${HH}:${mm}`;
 };
 
+// Helper to format nicely: "18th January 2026, 10:16"
+const formatNiceDate = (date: Date) => {
+    const getOrdinal = (n: number) => {
+        const s = ["th", "st", "nd", "rd"];
+        const v = n % 100;
+        return s[(v - 20) % 10] || s[v] || s[0];
+    };
+    const day = date.getDate();
+    const ord = getOrdinal(day);
+    const month = date.toLocaleString('default', { month: 'long' });
+    const year = date.getFullYear();
+    const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `${day}${ord} ${month} ${year}, ${time}`;
+};
+
 // Helper to format the display date for the button
 const formatEntryDate = (date: Date) => {
     const now = new Date();
@@ -728,7 +743,7 @@ const App: React.FC = () => {
 
     const updatedLogs = [log, ...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     setLogs(updatedLogs);
-    setToastMessage("✓ Logged!");
+    setToastMessage("✓ Saved!");
     setTimeout(() => setToastMessage(null), 2000);
     
     setNewEntry(prev => ({ ...prev, reps: '' }));
@@ -947,21 +962,6 @@ const App: React.FC = () => {
 
   return (
     <>
-      {/* CSS hack to make the date input clickable everywhere on WebKit browsers */}
-      <style>{`
-        .date-picker-hack::-webkit-calendar-picker-indicator {
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          width: 100%;
-          height: 100%;
-          color: transparent;
-          background: transparent;
-          cursor: pointer;
-        }
-      `}</style>
       <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={handleSyncClick}>
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
@@ -1046,16 +1046,19 @@ const App: React.FC = () => {
                </div>
 
                <div className="space-y-4">
-                 <div className="relative">
-                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                   </div>
+                 <div className="relative group">
                    <input 
                       type="datetime-local" 
                       value={toDateTimeLocal(entryDate)}
                       onChange={handleDateChange}
-                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 font-bold text-slate-700 outline-none focus:border-indigo-500 transition-colors date-picker-hack text-sm"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                    />
+                   <div className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 font-bold text-slate-700 transition-colors text-sm flex items-center group-focus-within:border-indigo-500">
+                      {formatNiceDate(entryDate)}
+                   </div>
+                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                   </div>
                  </div>
 
                  <div className="flex gap-3">
@@ -1093,7 +1096,7 @@ const App: React.FC = () => {
                  className="w-full mt-8 bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
                >
                  <span>Save Entry</span>
-                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                 
                </button>
             </div>
           </div>
@@ -1123,8 +1126,7 @@ const App: React.FC = () => {
                  <button 
                     onClick={(e) => {
                        e.stopPropagation();
-                       setIsInstalled(false);
-                       localStorage.removeItem('fit_app_installed');
+                       handleInstallClick();
                     }}
                     className="text-[9px] font-black uppercase tracking-wider border-2 border-emerald-100 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg active:opacity-70 hover:bg-emerald-100 transition-colors"
                  >
