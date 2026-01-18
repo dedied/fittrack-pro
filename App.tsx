@@ -12,7 +12,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '1.9.3';
+const APP_VERSION = '1.9.4';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -90,6 +90,7 @@ const App: React.FC = () => {
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
 
   const [logs, setLogs] = useState<WorkoutLog[]>(() => {
     try {
@@ -117,6 +118,18 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('fit_totals_timeframe', totalsTimeFrame);
   }, [totalsTimeFrame]);
+
+  // Check installation status
+  useEffect(() => {
+    const checkInstall = () => {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      const localFlag = localStorage.getItem('fit_app_installed') === 'true';
+      if (isStandalone || localFlag) {
+        setIsInstalled(true);
+      }
+    };
+    checkInstall();
+  }, []);
 
   // Initialize Supabase & App State
   useEffect(() => {
@@ -281,25 +294,26 @@ const App: React.FC = () => {
     if (pinAttempts <= 0) return;
     setPinError(null);
     
-    // Check if the pin is correct by trying to decrypt session
-    const sessionData = await secureStore.get(pin);
+    // 1. Verify PIN first (independent of session)
+    const isPinValid = await secureStore.verify(pin);
     
-    if (sessionData && supabase) {
-      // If we are just enabling security (creating pin), enable bio now
-      if (appState === 'creatingPin') {
-         return;
-      }
-
-      // Standard Login
-      const { error } = await supabase.auth.setSession(sessionData as any);
-      if (error) {
-        setPinError("Invalid session. Please log in again.");
-        await handleResetPin();
-      } else {
-        setUser((sessionData as any).user);
+    if (isPinValid) {
+        // 2. Try to decrypt session
+        const sessionData = await secureStore.get(pin);
+        
+        if (sessionData && supabase) {
+            // Restore session
+            const { error } = await supabase.auth.setSession(sessionData as any);
+            if (!error) {
+                setUser((sessionData as any).user);
+            }
+            // If error (e.g. token expired), we still unlock the app but user is logged out
+        }
+        
+        // 3. Unlock App
         setPinAttempts(MAX_PIN_ATTEMPTS);
         setAppState('unlocked');
-      }
+        
     } else {
       setPinError("Incorrect PIN");
       setPinAttempts(prev => prev - 1);
@@ -328,30 +342,33 @@ const App: React.FC = () => {
   // Called when user finishes creating a PIN in settings
   const handlePinCreate = async (pin: string) => {
     if (!supabase) return;
+    // Get current session if it exists (might be null if Guest)
     const { data: { session } } = await supabase.auth.getSession();
     
-    if (session) {
-      // 1. Save session encrypted with PIN
-      await secureStore.set(pin, session);
-      
-      // 2. Immediately attempt to enable biometrics
-      try {
-        const bioSuccess = await secureStore.enableBiometrics(pin);
-        if (bioSuccess) {
-          setHasBiometrics(true);
-          alert("App Lock & Biometrics Enabled!");
-        } else {
-          alert("PIN set, but Biometrics could not be enabled. You can use the PIN to unlock.");
-          setHasBiometrics(false);
+    // Always set the PIN/Lock (even if session is null)
+    try {
+        await secureStore.set(pin, session);
+        
+        // 2. Attempt to enable biometrics
+        try {
+            const bioSuccess = await secureStore.enableBiometrics(pin);
+            if (bioSuccess) {
+              setHasBiometrics(true);
+              alert("App Lock & Biometrics Enabled!");
+            } else {
+              alert("PIN set, but Biometrics could not be enabled. You can use the PIN to unlock.");
+              setHasBiometrics(false);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("PIN set. Biometrics failed.");
         }
-      } catch (e) {
-        console.error(e);
-        alert("PIN set. Biometrics failed.");
-      }
-      setAppState('unlocked');
-    } else {
-      alert("Session not found. Please log in again.");
-      setAppState('onboarding');
+        
+        setAppState('unlocked');
+        
+    } catch (err) {
+        console.error("Error securing app:", err);
+        alert("Failed to enable App Lock.");
     }
   };
 
@@ -435,11 +452,11 @@ const App: React.FC = () => {
             }
         }
         
-        // 2. Clear Local Secure Storage
+        // 2. Clear Local Session ONLY (Keep Lock/Bio if set)
         try {
-           await secureStore.clear();
+           await secureStore.removeSession();
         } catch (err) {
-            console.error("Secure store clear failed:", err);
+            console.error("Secure store session clear failed:", err);
         }
         
         // 3. Clear Local Flags
@@ -448,7 +465,8 @@ const App: React.FC = () => {
         // 4. Reset Application State
         setUser(null);
         setSyncStatus('unconfigured');
-        setHasBiometrics(false);
+        // Note: Do NOT reset biometrics or pin capability here.
+        // setHasBiometrics(false); <-- REMOVED
         setOnboardingStep('email');
         setEmailInput('');
         setOtpInput('');
@@ -503,8 +521,9 @@ const App: React.FC = () => {
         await supabase.auth.signOut();
     }
 
-    // 3. Clear local storage and secure store
-    await secureStore.clear();
+    // 3. Clear local storage but KEEP secure store Lock/Bio
+    // Changed from secureStore.clear() to removeSession() to preserve PIN
+    await secureStore.removeSession();
     setLogs([]);
     
     // 4. Reset App State
@@ -514,7 +533,7 @@ const App: React.FC = () => {
     setOnboardingStep('email');
     setEmailInput('');
     setOtpInput('');
-    setHasBiometrics(false);
+    // setHasBiometrics(false); // Removed to persist biometric state
 
     setToastMessage("Account deleted");
     setTimeout(() => setToastMessage(null), 3000);
@@ -671,7 +690,24 @@ const App: React.FC = () => {
   };
 
   useEffect(() => { const h = (e: any) => { e.preventDefault(); setDeferredPrompt(e); }; window.addEventListener('beforeinstallprompt', h); return () => window.removeEventListener('beforeinstallprompt', h); }, []);
-  const handleInstallClick = async () => { if (deferredPrompt) { await deferredPrompt.prompt(); } else { alert("To install, use your browser's 'Add to Home Screen' feature."); }};
+  
+  const handleInstallClick = async () => { 
+    if (deferredPrompt) { 
+        deferredPrompt.prompt(); 
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+            setIsInstalled(true);
+            localStorage.setItem('fit_app_installed', 'true');
+        }
+        setDeferredPrompt(null);
+    } else if (isInstalled) {
+        // "Reinstall" action - strictly reset state so user can try again if the prompt reappears
+        setIsInstalled(false);
+        localStorage.removeItem('fit_app_installed');
+    } else {
+        alert("To install, use your browser's 'Add to Home Screen' feature."); 
+    }
+  };
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.value) {
@@ -1053,15 +1089,23 @@ const App: React.FC = () => {
             )}
 
             {/* Install App Button - Standalone Section */}
-            <button onClick={handleInstallClick} className="w-full bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center gap-4 shadow-sm text-indigo-600 active:scale-95 transition-transform">
-               <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+            <button onClick={handleInstallClick} className={`w-full bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center gap-4 shadow-sm active:scale-95 transition-transform ${isInstalled ? 'text-emerald-600' : 'text-indigo-600'}`}>
+               <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isInstalled ? 'bg-emerald-50' : 'bg-indigo-50'}`}>
+                 {isInstalled ? (
+                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                 ) : (
+                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                 )}
                </div>
                <div className="text-left flex-1">
-                 <p className="font-bold text-lg text-slate-800">Install App</p>
-                 <p className="text-[10px] font-bold uppercase text-slate-400">Add to Home Screen</p>
+                 <p className="font-bold text-lg text-slate-800">{isInstalled ? "App Installed" : "Install App"}</p>
+                 <p className="text-[10px] font-bold uppercase text-slate-400">{isInstalled ? "Ready to use" : "Add to Home Screen"}</p>
                </div>
-               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+               {isInstalled ? (
+                 <span className="text-[9px] font-black uppercase tracking-wider border-2 border-emerald-100 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg">Reinstall</span>
+               ) : (
+                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+               )}
             </button>
 
             {/* Main Settings List */}
@@ -1091,16 +1135,23 @@ const App: React.FC = () => {
               <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
               <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
               <button onClick={() => setShowClearDataConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600 border-b border-slate-100"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
-              <button 
-                onClick={user ? () => setShowDeleteAccountConfirm(true) : handleConnectCloud} 
-                className={`w-full p-6 flex items-center gap-4 ${user ? 'hover:bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-400'}`}
+              
+              {/* Delete Account / Connect Button Wrapper */}
+              <div 
+                onClick={user ? () => setShowDeleteAccountConfirm(true) : undefined} 
+                className={`w-full p-6 flex items-center gap-4 transition-colors ${user ? 'hover:bg-red-50 text-red-600 cursor-pointer' : 'text-slate-300 cursor-default'}`}
               >
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${user ? 'bg-red-100' : 'bg-slate-100'}`}>💀</div>
                 <div className="text-left flex-1 font-bold">Delete Account</div>
                 {!user && (
-                  <span className="text-[10px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg">Connect</span>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleConnectCloud(); }} 
+                    className="text-[10px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg active:opacity-70"
+                  >
+                    Connect
+                  </button>
                 )}
-              </button>
+              </div>
             </div>
             
             <div className="text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest pb-4">

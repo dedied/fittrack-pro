@@ -6,9 +6,10 @@
 // ==========================================
 
 const DB_NAME = 'FitTrackSecureDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented for schema update if needed (though object store is dynamic)
 const STORE_NAME = 'secureStore';
 const SESSION_KEY = 'encryptedSession';
+const LOCK_KEY = 'appLockVerification'; // New key for independent lock verification
 const BIO_KEY = 'biometricPin';
 
 // --- IndexedDB Helpers ---
@@ -84,77 +85,126 @@ const deriveKey = async (pin: string, salt: Uint8Array): Promise<CryptoKey> => {
   );
 };
 
-// --- Public API ---
-
-export interface EncryptedData {
-  encryptedToken: string;
-  salt: string;
-  iv: string;
-}
-
-export const secureStore = {
-  async set(pin: string, session: object): Promise<void> {
+const encryptData = async (pin: string, dataStr: string) => {
     const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
     const key = await deriveKey(pin, salt);
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encryptedTokenBuffer = await crypto.subtle.encrypt(
+    const buffer = await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv },
       key,
-      textEncoder.encode(JSON.stringify(session))
+      textEncoder.encode(dataStr)
     );
-    
-    await dbAction('put', SESSION_KEY, {
-      key: SESSION_KEY,
-      encryptedToken: bufferToBase64(encryptedTokenBuffer),
-      salt: bufferToBase64(salt),
-      iv: bufferToBase64(iv),
-    });
-  },
-  
-  async get(pin: string): Promise<object | null> {
-    const data = await dbAction('get', SESSION_KEY);
-    if (!data) return null;
-    
-    try {
-      const salt = base64ToBuffer(data.salt);
-      const iv = base64ToBuffer(data.iv);
-      const encryptedToken = base64ToBuffer(data.encryptedToken);
+    return {
+        encrypted: bufferToBase64(buffer),
+        salt: bufferToBase64(salt),
+        iv: bufferToBase64(iv)
+    };
+};
+
+const decryptData = async (pin: string, encryptedBase64: string, saltBase64: string, ivBase64: string) => {
+      const salt = base64ToBuffer(saltBase64);
+      const iv = base64ToBuffer(ivBase64);
+      const encrypted = base64ToBuffer(encryptedBase64);
       
       const key = await deriveKey(pin, salt);
       const decryptedBuffer = await crypto.subtle.decrypt(
         { name: 'AES-GCM', iv },
         key,
-        encryptedToken
+        encrypted
       );
       
-      return JSON.parse(textDecoder.decode(decryptedBuffer));
+      return textDecoder.decode(decryptedBuffer);
+};
+
+// --- Public API ---
+
+export const secureStore = {
+  async set(pin: string, session: object | null): Promise<void> {
+    // 1. Always set the Lock Verification key
+    // This allows verifying the PIN even if no session exists (Guest mode)
+    const lockData = await encryptData(pin, 'VALID');
+    await dbAction('put', LOCK_KEY, { key: LOCK_KEY, ...lockData });
+
+    // 2. Set Session if provided
+    if (session) {
+        const sessionData = await encryptData(pin, JSON.stringify(session));
+        await dbAction('put', SESSION_KEY, { key: SESSION_KEY, ...sessionData });
+    } else {
+        // Ensure no stale session lingers if setting lock as guest
+        await dbAction('delete', SESSION_KEY);
+    }
+  },
+
+  async verify(pin: string): Promise<boolean> {
+     // 1. Try independent Lock Key first
+     const lockEntry = await dbAction('get', LOCK_KEY);
+     if (lockEntry) {
+         try {
+             const result = await decryptData(pin, lockEntry.encrypted, lockEntry.salt, lockEntry.iv);
+             return result === 'VALID';
+         } catch { return false; }
+     }
+
+     // 2. Fallback: Migration for existing users (Check Session Key)
+     const sessionEntry = await dbAction('get', SESSION_KEY);
+     if (sessionEntry) {
+         try {
+             await decryptData(pin, sessionEntry.encryptedToken, sessionEntry.salt, sessionEntry.iv);
+             // If successful, we can implicitly trust the PIN. 
+             // Ideally we should migrate here, but let's just return true.
+             return true; 
+         } catch { return false; }
+     }
+
+     return false;
+  },
+  
+  // Legacy getter: now just retrieves session, assumes PIN is verified or checks implicitly
+  async get(pin: string): Promise<object | null> {
+    const data = await dbAction('get', SESSION_KEY);
+    if (!data) return null;
+    
+    try {
+      // Handle legacy format vs new format if needed (legacy used specific field names)
+      // Legacy structure: { encryptedToken, salt, iv } matches our new helper output structure roughly?
+      // Our helper encryptData outputs { encrypted, salt, iv }
+      // Existing code wrote { encryptedToken, salt, iv }
+      
+      const encrypted = data.encryptedToken || data.encrypted;
+      const decryptedStr = await decryptData(pin, encrypted, data.salt, data.iv);
+      return JSON.parse(decryptedStr);
     } catch (e) {
       console.error("Decryption failed:", e);
       return null;
     }
   },
 
+  async removeSession(): Promise<void> {
+      await dbAction('delete', SESSION_KEY);
+  },
+
   async isPinSet(): Promise<boolean> {
-    const data = await dbAction('get', SESSION_KEY);
-    return !!data;
+    // Check either key to support migration
+    const lock = await dbAction('get', LOCK_KEY);
+    const session = await dbAction('get', SESSION_KEY);
+    return !!lock || !!session;
   },
   
   async clear(): Promise<void> {
     await dbAction('delete', SESSION_KEY);
+    await dbAction('delete', LOCK_KEY);
     await dbAction('delete', BIO_KEY);
   },
 
-  // --- Biometric Additions ---
+  // --- Biometrics Additions ---
 
   async enableBiometrics(pin: string): Promise<boolean> {
     if (!window.PublicKeyCredential) return false;
     
     try {
-       // Create a credential to register the device authenticator
        const challenge = new Uint8Array(32);
        window.crypto.getRandomValues(challenge);
        
-       // Generate a random User ID to prevent collisions if re-registering
        const userId = new Uint8Array(16);
        window.crypto.getRandomValues(userId);
 
@@ -179,9 +229,7 @@ export const secureStore = {
        
        if (!credential) return false;
 
-       // Store the PIN guarded by this logical check, AND the credential ID
        const credentialId = bufferToBase64(credential.rawId);
-
        await dbAction('put', BIO_KEY, { key: BIO_KEY, pin, credentialId });
        return true;
     } catch (e) {
@@ -203,7 +251,6 @@ export const secureStore = {
        window.crypto.getRandomValues(challenge);
        const credentialIdBuffer = base64ToBuffer(data.credentialId);
 
-       // Prompt for biometric authentication using the stored Credential ID
        await navigator.credentials.get({
          publicKey: {
            challenge,
@@ -216,7 +263,6 @@ export const secureStore = {
          }
        });
        
-       // If successful, return the stored PIN
        return data.pin;
      } catch (e) {
        console.error("Biometric auth failed", e);
