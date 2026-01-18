@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 
 export type TabType = 'dashboard' | 'add' | 'settings' | 'auth';
@@ -11,11 +10,12 @@ interface LayoutProps {
   setActiveTab: (tab: TabType) => void;
   syncStatus?: SyncStatus;
   onSyncClick?: () => void;
+  onShowToast?: (message: string) => void;
 }
 
 const REFRESH_THRESHOLD = 80;
 
-const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, syncStatus = 'unconfigured', onSyncClick }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, syncStatus = 'unconfigured', onSyncClick, onShowToast }) => {
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const scrollRef = useRef<HTMLElement>(null);
@@ -73,6 +73,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
   };
 
   const triggerRefresh = () => {
+    // Prevent refresh if offline to avoid white screen/navigation errors
+    if (!navigator.onLine) {
+      setPullDistance(0);
+      if (onShowToast) {
+        onShowToast("⚠️ Cannot refresh while offline");
+      }
+      return;
+    }
+
     setIsRefreshing(true);
     setPullDistance(REFRESH_THRESHOLD);
     if ('vibrate' in navigator) navigator.vibrate(50);
