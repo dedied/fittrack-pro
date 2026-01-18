@@ -105,6 +105,66 @@ alter function public.delete_user() owner to authenticated;
 ------------------------------------------------------------
 revoke all on function public.delete_user() from public;
 grant execute on function public.delete_user() to authenticated;
+```
 
+## 🤖 Created with Google AI Studio
 
+This project was entirely crafted using Google AI Studio.
+
+If you encounter rate limits when trying to sync changes directly to GitHub from AI Studio, you can download the project files and use the script below to automate the syncing process locally.
+
+### Sync Script
+
+Save this script as `sync_project.sh` and run it to automatically move the latest downloaded zip from AI Studio into your git repository and push changes.
+
+```bash
+#!/bin/bash
+
+set -e
+
+# CONFIGURATION
+DOWNLOADS="$HOME/Downloads"
+ZIP_INBOX="$HOME/aistudio-project-downloads/fittrack-pro"
+PROJECT_DIR="$HOME/development/fittrack-pro"
+TEMP_DIR="/tmp/fittrack_extract"
+
+# Find the newest ZIP in Downloads starting with "fittrack-pro"
+LATEST_ZIP=$(ls -t "$DOWNLOADS"/fittrack-pro*.zip 2>/dev/null | head -n 1)
+
+if [ -z "$LATEST_ZIP" ]; then
+  echo "No fittrack-pro*.zip files found in $DOWNLOADS"
+  exit 1
+fi
+
+echo "Found latest ZIP in Downloads: $LATEST_ZIP"
+
+# Move it into the inbox folder
+mv "$LATEST_ZIP" "$ZIP_INBOX"/
+
+# Now find the newest ZIP in the inbox (the one we just moved)
+ZIP_FILE=$(ls -t "$ZIP_INBOX"/*.zip | head -n 1)
+
+echo "Processing ZIP from inbox: $ZIP_FILE"
+
+# Clean temp directory
+rm -rf "$TEMP_DIR"
+mkdir -p "$TEMP_DIR"
+
+# Extract ZIP
+unzip "$ZIP_FILE" -d "$TEMP_DIR"
+
+# Sync extracted files into the Git repo
+rsync -av --delete --exclude='.git' --exclude='.github' "$TEMP_DIR"/ "$PROJECT_DIR"/
+
+# Move into the project directory
+cd "$PROJECT_DIR"
+
+# Stage and commit changes
+git add .
+git commit -m "Update FitTrack Pro from latest AI Studio export"
+
+# Push to GitHub
+git push
+
+echo "Sync complete."
 ```

@@ -12,7 +12,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '1.9.4';
+const APP_VERSION = '1.9.5';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -62,6 +62,7 @@ const App: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
   const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [showPrivacyDialog, setShowPrivacyDialog] = useState(false);
   
   // Sync Error Handling
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -700,10 +701,6 @@ const App: React.FC = () => {
             localStorage.setItem('fit_app_installed', 'true');
         }
         setDeferredPrompt(null);
-    } else if (isInstalled) {
-        // "Reinstall" action - strictly reset state so user can try again if the prompt reappears
-        setIsInstalled(false);
-        localStorage.removeItem('fit_app_installed');
     } else {
         alert("To install, use your browser's 'Add to Home Screen' feature."); 
     }
@@ -1018,78 +1015,15 @@ const App: React.FC = () => {
             </section>
           </div>
         )}
-        {activeTab === 'add' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="w-16"></div> {/* Spacer */}
-              <h2 className="text-xl font-bold text-slate-800">Record Set</h2>
-              <div className="relative">
-                <button 
-                  className="flex items-center gap-1.5 text-xs font-semibold bg-slate-100 text-slate-600 px-2 py-1.5 rounded-lg active:bg-slate-200"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                  <span>{formatEntryDate(entryDate)}</span>
-                </button>
-                <input
-                  type="datetime-local"
-                  onChange={handleDateChange}
-                  value={toDateTimeLocal(entryDate)}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-picker-hack"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">{EXERCISES.map(ex => (<button key={ex.id} onClick={() => setNewEntry({ ...newEntry, type: ex.id })} className={`flex items-center gap-4 p-4 rounded-2xl border-2 w-full transition-all ${newEntry.type === ex.id ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 bg-white'}`}><div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ex.color} bg-opacity-10`}>{ex.icon}</div><div className="font-bold text-slate-800">{ex.label}</div></button>))}</div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Reps</label><input type="number" inputMode="numeric" value={newEntry.reps} onChange={e => setNewEntry({...newEntry, reps: e.target.value})} placeholder="0" className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl focus:border-indigo-600 outline-none" /></div>
-              <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Weight (kg)</label><input type="number" inputMode="decimal" value={newEntry.weight} onChange={e => setNewEntry({...newEntry, weight: e.target.value})} placeholder="0" disabled={!EXERCISES.find(e => e.id === newEntry.type)?.isWeighted} className="w-full text-2xl font-bold text-center p-5 bg-white border border-slate-100 rounded-2xl focus:border-indigo-600 outline-none" /></div>
-            </div>
-            <button onClick={handleAddLog} disabled={!newEntry.reps || parseInt(newEntry.reps) <= 0 || !!toastMessage} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg">{toastMessage === '✓ Logged!' ? 'SAVED! ✨' : 'SAVE SET'}</button>
-          </div>
-        )}
         {activeTab === 'settings' && (
           <div className="space-y-6">
             <header className="text-center font-bold text-2xl text-slate-800">Settings</header>
-            
-            {/* Profile Card */}
-            {user ? (
-              <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
-                <div className="flex items-center gap-3"><div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-black text-lg">{user.email?.charAt(0).toUpperCase()}</div><div><p className="font-bold text-slate-800 truncate max-w-[150px]">{user.email}</p><p className="text-[10px] text-emerald-500 font-bold uppercase">Cloud Connected</p></div></div>
-                <button 
-                  onClick={() => {
-                     if (logoutConfirm) {
-                        handleLogout();
-                     } else {
-                        setLogoutConfirm(true);
-                        setTimeout(() => setLogoutConfirm(false), 3000);
-                     }
-                  }} 
-                  disabled={isLoggingOut}
-                  className={`text-[10px] font-black uppercase border-2 px-4 py-2 rounded-xl disabled:opacity-50 transition-colors flex items-center gap-2 ${logoutConfirm ? 'bg-red-500 text-white border-red-500' : 'text-slate-400 border-slate-50 hover:text-red-500'}`}
-                >
-                  {isLoggingOut ? (
-                    <>
-                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                        <span>Exiting...</span>
-                    </>
-                  ) : (logoutConfirm ? 'Confirm?' : 'Sign Out')}
-                </button>
-              </div>
-            ) : (
-              <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center justify-between shadow-sm">
-                 <div className="flex items-center gap-3">
-                   <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 font-black text-lg">G</div>
-                   <div>
-                     <p className="font-bold text-slate-800">Guest User</p>
-                     <p className="text-[10px] text-slate-400 font-bold uppercase">Local Storage Only</p>
-                   </div>
-                 </div>
-                 <button onClick={handleConnectCloud} className="text-[10px] font-black text-indigo-600 uppercase border-2 border-indigo-50 bg-indigo-50 px-4 py-2 rounded-xl hover:bg-indigo-100">Connect</button>
-              </div>
-            )}
 
             {/* Install App Button - Standalone Section */}
-            <button onClick={handleInstallClick} className={`w-full bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center gap-4 shadow-sm active:scale-95 transition-transform ${isInstalled ? 'text-emerald-600' : 'text-indigo-600'}`}>
+            <div 
+               onClick={!isInstalled ? handleInstallClick : undefined}
+               className={`w-full bg-white rounded-[2rem] p-6 border border-slate-100 flex items-center gap-4 shadow-sm transition-transform ${!isInstalled ? 'active:scale-95 cursor-pointer text-indigo-600' : 'text-emerald-600 cursor-default'}`}
+            >
                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isInstalled ? 'bg-emerald-50' : 'bg-indigo-50'}`}>
                  {isInstalled ? (
                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -1102,59 +1036,132 @@ const App: React.FC = () => {
                  <p className="text-[10px] font-bold uppercase text-slate-400">{isInstalled ? "Ready to use" : "Add to Home Screen"}</p>
                </div>
                {isInstalled ? (
-                 <span className="text-[9px] font-black uppercase tracking-wider border-2 border-emerald-100 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg">Reinstall</span>
+                 <button 
+                    onClick={(e) => {
+                       e.stopPropagation();
+                       setIsInstalled(false);
+                       localStorage.removeItem('fit_app_installed');
+                    }}
+                    className="text-[9px] font-black uppercase tracking-wider border-2 border-emerald-100 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg active:opacity-70 hover:bg-emerald-100 transition-colors"
+                 >
+                    Reinstall
+                 </button>
                ) : (
                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                )}
-            </button>
+            </div>
 
-            {/* Main Settings List */}
-            <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
-              <button onClick={hasBiometrics ? handleDisableSecurity : handleEnableSecurity} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasBiometrics ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
-                  {hasBiometrics ? (
-                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-                  ) : (
-                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                  )}
-                </div>
-                <div className="text-left flex-1 font-bold">
-                  {hasBiometrics ? "Disable App Lock" : "Enable App Lock & Biometrics"}
-                </div>
-                {!hasBiometrics && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>}
-              </button>
-              
-              {hasBiometrics && (
-                <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
-                   <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div>
-                   <div className="text-left flex-1 font-bold">Change PIN</div>
-                </button>
-              )}
-
-              <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
-              <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
-              <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
-              <button onClick={() => setShowClearDataConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600 border-b border-slate-100"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
-              
-              {/* Delete Account / Connect Button Wrapper */}
-              <div 
-                onClick={user ? () => setShowDeleteAccountConfirm(true) : undefined} 
-                className={`w-full p-6 flex items-center gap-4 transition-colors ${user ? 'hover:bg-red-50 text-red-600 cursor-pointer' : 'text-slate-300 cursor-default'}`}
-              >
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${user ? 'bg-red-100' : 'bg-slate-100'}`}>💀</div>
-                <div className="text-left flex-1 font-bold">Delete Account</div>
-                {!user && (
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleConnectCloud(); }} 
-                    className="text-[10px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg active:opacity-70"
+            {/* Data Management Section */}
+            <div>
+               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-4 mb-3">Data Management</h3>
+               <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
+                  
+                  {/* Account Status Button (Moved from Top) */}
+                  <div 
+                    className="w-full p-6 flex items-center gap-4 border-b border-slate-100 bg-white cursor-default"
                   >
-                    Connect
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg ${user ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                        {user ? user.email?.charAt(0).toUpperCase() : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        )}
+                    </div>
+                    <div className="text-left flex-1">
+                        <p className="font-bold text-slate-800 truncate max-w-[150px] sm:max-w-xs">{user ? user.email : "Guest User"}</p>
+                        {user ? (
+                            <span className="inline-block mt-1 bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wide">
+                                Cloud Connected
+                            </span>
+                        ) : (
+                            <p className="text-[10px] font-bold uppercase text-slate-400">
+                                Local Storage Only
+                            </p>
+                        )}
+                    </div>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation(); // Stop div click if guest
+                            if (user) {
+                                if (logoutConfirm) {
+                                    handleLogout();
+                                } else {
+                                    setLogoutConfirm(true);
+                                    setTimeout(() => setLogoutConfirm(false), 3000);
+                                }
+                            } else {
+                                handleConnectCloud();
+                            }
+                        }}
+                        disabled={isLoggingOut}
+                        className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border-2 transition-all active:scale-95 ${
+                            user 
+                              ? (logoutConfirm ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-red-50 hover:text-red-600 hover:border-red-100 cursor-pointer') 
+                              : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100 cursor-pointer'
+                        }`}
+                    >
+                        {isLoggingOut ? (
+                             <div className="w-4 h-4 border-2 border-slate-300 border-t-indigo-600 rounded-full animate-spin"></div>
+                        ) : (
+                            user ? (logoutConfirm ? "Confirm?" : "Log Out") : "Connect"
+                        )}
+                    </button>
+                  </div>
+
+                  <button onClick={() => fileInputRef.current?.click()} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📥</div><div className="text-left flex-1 font-bold">Import Data</div></button>
+                  <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
+                  <button onClick={handleExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800"><div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">📤</div><div className="text-left flex-1 font-bold">Export Data</div></button>
+                  <button onClick={() => setShowClearDataConfirm(true)} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 text-red-600 border-b border-slate-100"><div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">🗑️</div><div className="text-left flex-1 font-bold">Clear All Data</div></button>
+                  
+                  {/* Delete Account */}
+                  <button 
+                      onClick={() => user && setShowDeleteAccountConfirm(true)}
+                      disabled={!user} 
+                      className={`w-full p-6 flex items-center gap-4 transition-colors ${user ? 'hover:bg-red-50 text-red-600 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
+                  >
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${user ? 'bg-red-100' : 'bg-slate-100'}`}>💀</div>
+                      <div className="text-left flex-1 font-bold">Delete Account</div>
+                      {!user && (
+                        <div className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border-2 bg-slate-50 text-slate-400 border-slate-100">
+                            You need to be connected
+                        </div>
+                      )}
                   </button>
-                )}
-              </div>
+               </div>
+            </div>
+
+            {/* Privacy & Security Section */}
+            <div>
+               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-4 mb-3">Privacy & Security</h3>
+               <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
+                  <button onClick={hasBiometrics ? handleDisableSecurity : handleEnableSecurity} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasBiometrics ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
+                      {hasBiometrics ? (
+                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+                      ) : (
+                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                      )}
+                    </div>
+                    <div className="text-left flex-1 font-bold">
+                      {hasBiometrics ? "Disable App Lock" : "Enable App Lock & Biometrics"}
+                    </div>
+                    {!hasBiometrics && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>}
+                  </button>
+                  
+                  {hasBiometrics && (
+                    <button onClick={() => setAppState('creatingPin')} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 border-b text-slate-800">
+                       <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🔐</div>
+                       <div className="text-left flex-1 font-bold">Change PIN</div>
+                    </button>
+                  )}
+                  
+                  <button onClick={() => setShowPrivacyDialog(true)} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 text-slate-800 transition-colors">
+                      <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">🛡️</div>
+                      <div className="text-left flex-1 font-bold">Data & Privacy Policy</div>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </button>
+               </div>
             </div>
             
-            <div className="text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest pb-4">
+            <div className="text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest pb-4 pt-4">
                v{APP_VERSION}
             </div>
           </div>
@@ -1215,6 +1222,40 @@ const App: React.FC = () => {
                 Delete Forever
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Privacy Dialog */}
+      {showPrivacyDialog && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm overlay-animate" onClick={() => setShowPrivacyDialog(false)} role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl dialog-animate" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mb-4 text-indigo-600">
+               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h2 className="text-xl font-black text-slate-800 mb-2">Privacy & Security</h2>
+            
+            <div className="space-y-4 text-sm text-slate-600 leading-relaxed mt-4">
+               <p>
+                 <strong className="text-slate-800">Storage Strategy</strong><br/>
+                 We utilize an offline-first approach. Your workout data is securely stored locally on your device, ensuring you have access even without an internet connection.
+               </p>
+               <p>
+                 <strong className="text-slate-800">Cloud Database</strong><br/>
+                 If you choose to sync your account, we strictly limit the personal data we store. Our database only holds:
+               </p>
+               <ul className="list-disc pl-4 space-y-1">
+                 <li>Your <strong>email address</strong> (for authentication).</li>
+                 <li>Your <strong>workout logs</strong>.</li>
+               </ul>
+               <p>
+                 We do not track your location, store your name, or collect any other personal identifiers.
+               </p>
+            </div>
+
+            <button onClick={() => setShowPrivacyDialog(false)} className="mt-6 w-full bg-slate-100 text-slate-800 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors">
+              Close
+            </button>
           </div>
         </div>
       )}
