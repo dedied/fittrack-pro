@@ -12,7 +12,7 @@ import { secureStore } from './utils/secureStore';
 // ==========================================
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.1.6';
+const APP_VERSION = '2.1.7';
 // ==========================================
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -114,12 +114,14 @@ const App: React.FC = () => {
       const saved = localStorage.getItem('fit_logs');
       if (!saved) return [];
       const parsed = JSON.parse(saved);
-      // Migration: Convert old user_id to undefined (to be claimed by new owner_id on sync) if strictly local
-      return parsed.map((l: any) => ({
-        ...l,
-        owner_id: l.owner_id || undefined, 
-        user_id: undefined // Remove legacy field
-      }));
+      // Migration: Ensure legacy user_id field is completely removed
+      return parsed.map((l: any) => {
+        const { user_id, ...rest } = l;
+        return {
+          ...rest,
+          owner_id: l.owner_id || undefined, 
+        };
+      });
     } catch { return []; }
   });
   
@@ -254,7 +256,14 @@ const App: React.FC = () => {
       //    - Items that don't have an owner_id yet (created as guest)
       const toUpload = currentLogs
         .filter(ll => !cloudMap.has(ll.id) || !ll.owner_id)
-        .map(ll => ({ ...ll, owner_id: user.id }));
+        .map(ll => {
+            // Sanitize: remove 'user_id' if it exists in local storage legacy data
+            const { user_id, ...cleanLog } = ll as any;
+            return { 
+                ...cleanLog, 
+                owner_id: user.id 
+            };
+        });
 
       // 3. Perform Upload
       if (toUpload.length > 0) {
@@ -274,7 +283,9 @@ const App: React.FC = () => {
         //  and any new items added by the user during this sync process)
         prevLogs.forEach(ll => {
           if (!mergedMap.has(ll.id)) {
-            mergedMap.set(ll.id, { ...ll, owner_id: user.id });
+            // Ensure sanitization here too for in-memory consistency
+            const { user_id, ...rest } = ll as any;
+            mergedMap.set(ll.id, { ...rest, owner_id: user.id });
           }
         });
 
