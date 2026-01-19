@@ -18,6 +18,7 @@ interface SettingsViewProps {
   isLoggingOut: boolean;
   logoutConfirm: boolean;
   appVersion: string;
+  onVersionClick?: () => void;
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({
@@ -37,7 +38,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   onAuthAction,
   isLoggingOut,
   logoutConfirm,
-  appVersion
+  appVersion,
+  onVersionClick
 }) => {
   return (
     <div className="space-y-6">
@@ -122,7 +124,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
       
       <div className="text-center pb-8 pt-4">
-         <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">v{appVersion}</div>
+         <button onClick={onVersionClick} className="text-[10px] font-bold text-slate-300 uppercase tracking-widest active:text-indigo-400">v{appVersion}</button>
       </div>
     </div>
   );

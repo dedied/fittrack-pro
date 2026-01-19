@@ -7,13 +7,14 @@ import SettingsView from './components/SettingsView';
 import HistoryView from './components/HistoryView';
 import AppDialogs from './components/AppDialogs';
 import PinLockScreen from './components/PinLockScreen';
+import TestDashboard from './components/TestDashboard';
 import { WorkoutLog, EXERCISES, ExerciseType } from './types';
 import { secureStore } from './utils/secureStore';
 import { generateId } from './utils/dateUtils';
 
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.3.0';
+const APP_VERSION = '2.3.3';
 const MAX_PIN_ATTEMPTS = 5;
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -33,6 +34,9 @@ const App: React.FC = () => {
   const [showSyncErrorDialog, setShowSyncErrorDialog] = useState(false);
   const [showCloudWipeDialog, setShowCloudWipeDialog] = useState(false);
   const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
+  const [showTestDashboard, setShowTestDashboard] = useState(false);
+  const [devModeCount, setDevModeCount] = useState(0);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinAttempts, setPinAttempts] = useState(MAX_PIN_ATTEMPTS);
@@ -44,10 +48,8 @@ const App: React.FC = () => {
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'email' | 'otp'>('welcome');
   const [user, setUser] = useState<any>(null);
-  const [resendTimer, setResendTimer] = useState(0);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('unconfigured');
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [logs, setLogs] = useState<WorkoutLog[]>(() => {
     try {
@@ -134,6 +136,52 @@ const App: React.FC = () => {
     } finally { setIsLoggingOut(false); setLogoutConfirm(false); }
   };
 
+  const handleExportCSV = () => {
+    if (logs.length === 0) { triggerToast("No data to export"); return; }
+    const headers = ["Date", "Type", "Reps", "Weight (kg)"];
+    const rows = logs.map(log => [new Date(log.date).toISOString(), log.type, log.reps, log.weight || '']);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `fittrack_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const newLogs: WorkoutLog[] = [];
+        const lines = text.split('\n');
+        lines.forEach((line, i) => {
+          if (i === 0 || !line.trim()) return;
+          const [d, t, r, w] = line.split(',').map(s => s.trim().replace(/"/g, ''));
+          if (d && t && r) {
+            newLogs.push({ id: generateId(), date: new Date(d).toISOString(), type: t as ExerciseType, reps: parseInt(r), weight: w ? parseFloat(w) : undefined, owner_id: user?.id });
+          }
+        });
+        setLogs(prev => [...newLogs, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        triggerToast(`✓ Imported ${newLogs.length} logs!`);
+        if (user && supabase && navigator.onLine) setTimeout(() => syncWithCloud(true), 500);
+      } catch { triggerToast("Import failed"); }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleVersionClick = () => {
+    setDevModeCount(prev => {
+      const next = prev + 1;
+      if (next >= 3) { setShowTestDashboard(true); return 0; }
+      return next;
+    });
+  };
+
   const filteredStats = useMemo(() => {
     const now = new Date();
     return EXERCISES.map(ex => ({ ...ex, totalReps: logs.filter(l => {
@@ -187,11 +235,12 @@ const App: React.FC = () => {
         <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={() => syncWithCloud()} onShowToast={triggerToast}>
           {activeTab === 'dashboard' && <DashboardView logs={logs} totalsTimeFrame={totalsTimeFrame} setTotalsTimeFrame={setTotalsTimeFrame} filteredStats={filteredStats} maxStats={maxStats} setViewingHistory={setViewingHistory} />}
           {activeTab === 'add' && <AddLogView newEntry={newEntry} setNewEntry={setNewEntry} entryDate={entryDate} handleDateChange={e => setEntryDate(new Date(e.target.value))} handleAddLog={handleAddLog} />}
-          {activeTab === 'settings' && <SettingsView user={user} isInstalled={isInstalled} handleInstallClick={() => {}} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={() => {}} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={() => setAppState('creatingPin')} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onAuthAction={() => { if (user) { if (logoutConfirm) handleLogout(); else setLogoutConfirm(true); } else setOnboardingStep('email'); }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} />}
+          {activeTab === 'settings' && <SettingsView user={user} isInstalled={isInstalled} handleInstallClick={() => {}} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={() => setAppState('creatingPin')} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onAuthAction={() => { if (user) { if (logoutConfirm) handleLogout(); else setLogoutConfirm(true); } else setOnboardingStep('email'); }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} onVersionClick={handleVersionClick} />}
         </Layout>
       )}
-      <input type="file" ref={fileInputRef} className="hidden" />
+      <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" />
       <AppDialogs syncError={syncError} showSyncErrorDialog={showSyncErrorDialog} onSyncErrorClose={() => setShowSyncErrorDialog(false)} onSyncRetry={() => syncWithCloud()} showCloudWipeDialog={showCloudWipeDialog} onCloudKeepLocal={() => syncWithCloud(true)} onCloudOverwriteLocal={() => { setLogs([]); setShowCloudWipeDialog(false); }} showClearDataConfirm={showClearDataConfirm} onClearDataCancel={() => setShowClearDataConfirm(false)} onClearDataConfirm={() => { setLogs([]); setShowClearDataConfirm(false); }} logToDelete={logToDelete} onDeleteLogCancel={() => setLogToDelete(null)} onDeleteLogConfirm={() => { setLogs(prev => prev.filter(l => l.id !== logToDelete)); setLogToDelete(null); }} showDeleteAccountConfirm={showDeleteAccountConfirm} onDeleteAccountCancel={() => setShowDeleteAccountConfirm(false)} onDeleteAccountConfirm={handleLogout} showPrivacyDialog={showPrivacyDialog} onPrivacyClose={() => setShowPrivacyDialog(false)} />
+      {showTestDashboard && <TestDashboard onClose={() => setShowTestDashboard(false)} logs={logs} />}
       {toastMessage && <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold toast-animate text-white bg-slate-900 border border-slate-700/50 backdrop-blur-md">{toastMessage}</div>}
     </>
   );
