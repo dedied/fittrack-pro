@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4';
 import Layout, { TabType, SyncStatus } from './components/Layout';
@@ -14,7 +15,7 @@ import { generateId } from './utils/dateUtils';
 
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.3.3';
+const APP_VERSION = '2.4.0';
 const MAX_PIN_ATTEMPTS = 5;
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -39,11 +40,7 @@ const App: React.FC = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pinError, setPinError] = useState<string | null>(null);
-  const [pinAttempts, setPinAttempts] = useState(MAX_PIN_ATTEMPTS);
   const [hasBiometrics, setHasBiometrics] = useState(false);
-  const [emailInput, setEmailInput] = useState('');
-  const [otpInput, setOtpInput] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'email' | 'otp'>('welcome');
@@ -65,6 +62,11 @@ const App: React.FC = () => {
   useEffect(() => { localStorage.setItem('fit_totals_timeframe', totalsTimeFrame); }, [totalsTimeFrame]);
   useEffect(() => { localStorage.setItem('fit_logs', JSON.stringify(logs)); }, [logs]);
 
+  const updateHasBio = async () => {
+    const bio = await secureStore.hasBiometrics();
+    setHasBiometrics(bio);
+  };
+
   useEffect(() => {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
     if (isStandalone || localStorage.getItem('fit_app_installed') === 'true') setIsInstalled(true);
@@ -73,8 +75,7 @@ const App: React.FC = () => {
     setSupabase(client);
     
     const init = async () => {
-      const bio = await secureStore.hasBiometrics();
-      setHasBiometrics(bio);
+      await updateHasBio();
       if (await secureStore.isPinSet()) setAppState('locked');
       else {
         const { data: { session } } = await client.auth.getSession();
@@ -182,6 +183,17 @@ const App: React.FC = () => {
     });
   };
 
+  const handleSecurityToggle = async () => {
+    const isSet = await secureStore.isPinSet();
+    if (isSet || hasBiometrics) {
+      await secureStore.clear();
+      await updateHasBio();
+      triggerToast("App lock disabled");
+    } else {
+      setAppState('creatingPin');
+    }
+  };
+
   const filteredStats = useMemo(() => {
     const now = new Date();
     return EXERCISES.map(ex => ({ ...ex, totalReps: logs.filter(l => {
@@ -216,7 +228,26 @@ const App: React.FC = () => {
 
   if (appState === 'loading') return <div className="h-[100dvh] bg-slate-50 flex items-center justify-center"><div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>;
   if (appState === 'locked' || appState === 'confirmingPinForBio') return <PinLockScreen isCreating={false} onPinEnter={async pin => { if (await secureStore.verify(pin)) setAppState('unlocked'); else setPinError("Invalid PIN"); }} onReset={() => setAppState('onboarding')} error={pinError} showBiometrics={hasBiometrics} onBiometricAuth={async () => { const p = await secureStore.getBiometricPin(); if (p) setAppState('unlocked'); }} />;
-  if (appState === 'creatingPin') return <PinLockScreen isCreating={true} onPinCreate={async p => { await secureStore.set(p, null); setAppState('unlocked'); }} onReset={() => setAppState('unlocked')} error={null} />;
+  if (appState === 'creatingPin') return (
+    <PinLockScreen 
+      isCreating={true} 
+      onPinCreate={async p => { 
+        await secureStore.set(p, null);
+        if (window.PublicKeyCredential) {
+          try {
+            const success = await secureStore.enableBiometrics(p);
+            if (success) triggerToast("Biometrics enabled!");
+          } catch (e) {
+            console.warn("Biometric enroll skipped/failed", e);
+          }
+        }
+        await updateHasBio();
+        setAppState('unlocked'); 
+      }} 
+      onReset={() => setAppState('unlocked')} 
+      error={null} 
+    />
+  );
   
   if (appState === 'onboarding') return (
     <div className="fixed inset-0 bg-indigo-600 z-50 p-8 flex flex-col items-center justify-center text-white text-center">
@@ -235,7 +266,7 @@ const App: React.FC = () => {
         <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={() => syncWithCloud()} onShowToast={triggerToast}>
           {activeTab === 'dashboard' && <DashboardView logs={logs} totalsTimeFrame={totalsTimeFrame} setTotalsTimeFrame={setTotalsTimeFrame} filteredStats={filteredStats} maxStats={maxStats} setViewingHistory={setViewingHistory} />}
           {activeTab === 'add' && <AddLogView newEntry={newEntry} setNewEntry={setNewEntry} entryDate={entryDate} handleDateChange={e => setEntryDate(new Date(e.target.value))} handleAddLog={handleAddLog} />}
-          {activeTab === 'settings' && <SettingsView user={user} isInstalled={isInstalled} handleInstallClick={() => {}} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={() => setAppState('creatingPin')} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onAuthAction={() => { if (user) { if (logoutConfirm) handleLogout(); else setLogoutConfirm(true); } else setOnboardingStep('email'); }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} onVersionClick={handleVersionClick} />}
+          {activeTab === 'settings' && <SettingsView user={user} isInstalled={isInstalled} handleInstallClick={() => {}} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={handleSecurityToggle} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onAuthAction={() => { if (user) { if (logoutConfirm) handleLogout(); else setLogoutConfirm(true); } else setOnboardingStep('email'); }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} onVersionClick={handleVersionClick} />}
         </Layout>
       )}
       <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" />

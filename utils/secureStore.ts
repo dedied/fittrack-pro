@@ -6,10 +6,10 @@
 // ==========================================
 
 const DB_NAME = 'FitTrackSecureDB';
-const DB_VERSION = 2; // Incremented for schema update if needed (though object store is dynamic)
+const DB_VERSION = 2; 
 const STORE_NAME = 'secureStore';
 const SESSION_KEY = 'encryptedSession';
-const LOCK_KEY = 'appLockVerification'; // New key for independent lock verification
+const LOCK_KEY = 'appLockVerification'; 
 const BIO_KEY = 'biometricPin';
 
 // --- IndexedDB Helpers ---
@@ -54,7 +54,13 @@ const bufferToBase64 = (buffer: ArrayBuffer) => {
   return btoa(binary);
 };
 
-const base64ToBuffer = (base64: string) => Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+const base64ToBuffer = (base64: string) => {
+  try {
+    return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  } catch (e) {
+    return new Uint8Array(0);
+  }
+};
 
 // --- Crypto Helpers ---
 
@@ -120,23 +126,18 @@ const decryptData = async (pin: string, encryptedBase64: string, saltBase64: str
 
 export const secureStore = {
   async set(pin: string, session: object | null): Promise<void> {
-    // 1. Always set the Lock Verification key
-    // This allows verifying the PIN even if no session exists (Guest mode)
     const lockData = await encryptData(pin, 'VALID');
     await dbAction('put', LOCK_KEY, { key: LOCK_KEY, ...lockData });
 
-    // 2. Set Session if provided
     if (session) {
         const sessionData = await encryptData(pin, JSON.stringify(session));
         await dbAction('put', SESSION_KEY, { key: SESSION_KEY, ...sessionData });
     } else {
-        // Ensure no stale session lingers if setting lock as guest
         await dbAction('delete', SESSION_KEY);
     }
   },
 
   async verify(pin: string): Promise<boolean> {
-     // 1. Try independent Lock Key first
      const lockEntry = await dbAction('get', LOCK_KEY);
      if (lockEntry) {
          try {
@@ -145,13 +146,10 @@ export const secureStore = {
          } catch { return false; }
      }
 
-     // 2. Fallback: Migration for existing users (Check Session Key)
      const sessionEntry = await dbAction('get', SESSION_KEY);
      if (sessionEntry) {
          try {
-             await decryptData(pin, sessionEntry.encryptedToken, sessionEntry.salt, sessionEntry.iv);
-             // If successful, we can implicitly trust the PIN. 
-             // Ideally we should migrate here, but let's just return true.
+             await decryptData(pin, sessionEntry.encryptedToken || sessionEntry.encrypted, sessionEntry.salt, sessionEntry.iv);
              return true; 
          } catch { return false; }
      }
@@ -159,22 +157,15 @@ export const secureStore = {
      return false;
   },
   
-  // Legacy getter: now just retrieves session, assumes PIN is verified or checks implicitly
   async get(pin: string): Promise<object | null> {
     const data = await dbAction('get', SESSION_KEY);
     if (!data) return null;
     
     try {
-      // Handle legacy format vs new format if needed (legacy used specific field names)
-      // Legacy structure: { encryptedToken, salt, iv } matches our new helper output structure roughly?
-      // Our helper encryptData outputs { encrypted, salt, iv }
-      // Existing code wrote { encryptedToken, salt, iv }
-      
       const encrypted = data.encryptedToken || data.encrypted;
       const decryptedStr = await decryptData(pin, encrypted, data.salt, data.iv);
       return JSON.parse(decryptedStr);
     } catch (e) {
-      console.error("Decryption failed:", e);
       return null;
     }
   },
@@ -184,7 +175,6 @@ export const secureStore = {
   },
 
   async isPinSet(): Promise<boolean> {
-    // Check either key to support migration
     const lock = await dbAction('get', LOCK_KEY);
     const session = await dbAction('get', SESSION_KEY);
     return !!lock || !!session;
@@ -195,8 +185,6 @@ export const secureStore = {
     await dbAction('delete', LOCK_KEY);
     await dbAction('delete', BIO_KEY);
   },
-
-  // --- Biometrics Additions ---
 
   async enableBiometrics(pin: string): Promise<boolean> {
     if (!window.PublicKeyCredential) return false;
@@ -234,7 +222,7 @@ export const secureStore = {
        return true;
     } catch (e) {
        console.error("Biometric setup failed", e);
-       return false;
+       throw e;
     }
   },
 
