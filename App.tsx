@@ -53,7 +53,10 @@ const App: React.FC = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('unconfigured');
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  
+  // We initialize deferredPrompt from the window object if it was caught before React mounted
+  const [deferredPrompt, setDeferredPrompt] = useState<any>((window as any).deferredPrompt || null);
+  
   const [logs, setLogs] = useState<WorkoutLog[]>(() => {
     try {
       const saved = localStorage.getItem('fit_logs');
@@ -85,17 +88,24 @@ const App: React.FC = () => {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
     if (isStandalone || localStorage.getItem('fit_app_installed') === 'true') setIsInstalled(true);
 
+    // Check if the global prompt was set while we were initializing
+    if ((window as any).deferredPrompt && !deferredPrompt) {
+      setDeferredPrompt((window as any).deferredPrompt);
+    }
+
     // PWA Install Handlers
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      console.log("Install prompt captured");
+      (window as any).deferredPrompt = e; // Keep global in sync
+      console.log("Install prompt captured in React");
     };
     
     const handleAppInstalled = () => {
       setIsInstalled(true);
       localStorage.setItem('fit_app_installed', 'true');
       setDeferredPrompt(null);
+      (window as any).deferredPrompt = null;
       triggerToast("App successfully installed!");
     };
 
@@ -128,26 +138,39 @@ const App: React.FC = () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
-  }, [triggerToast]);
+  }, [triggerToast]); // Removed deferredPrompt dependency to avoid loop
 
-  const handleInstallClick = useCallback(() => {
-    if (!deferredPrompt) {
+  const handleInstallClick = useCallback(async () => {
+    // Prefer state, fallback to global
+    const promptEvent = deferredPrompt || (window as any).deferredPrompt;
+
+    if (!promptEvent) {
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
       if (isIOS) {
         triggerToast("Tap 'Share' then 'Add to Home Screen'");
       } else {
-        triggerToast("App is already installed or not available");
+        triggerToast("Install not ready. Try reloading.");
       }
       return;
     }
     
-    deferredPrompt.prompt();
-    deferredPrompt.userChoice.then((choiceResult: any) => {
-      if (choiceResult.outcome !== 'accepted') {
-        triggerToast("Installation cancelled");
-      }
-      setDeferredPrompt(null);
-    });
+    // Show the install prompt
+    promptEvent.prompt();
+    
+    // Wait for the user to respond to the prompt
+    const { outcome } = await promptEvent.userChoice;
+    
+    if (outcome === 'accepted') {
+      console.log('User accepted the install prompt');
+    } else {
+      console.log('User dismissed the install prompt');
+      triggerToast("Installation cancelled");
+    }
+    
+    // We've used the prompt, so it can't be used again. Discard it.
+    setDeferredPrompt(null);
+    (window as any).deferredPrompt = null;
+    
   }, [deferredPrompt, triggerToast]);
 
   const syncWithCloud = async (skip = false): Promise<SyncResult> => {

@@ -11,6 +11,17 @@
   <title>FitTrack Pro</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script>
+    // Capture the install prompt immediately before any other scripts run
+    window.deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      // Prevent the mini-infobar from appearing on mobile
+      e.preventDefault();
+      // Stash the event so it can be triggered later.
+      window.deferredPrompt = e;
+      console.log('Native install prompt captured globally');
+    });
+  </script>
   <style>
     body {
       font-family: 'Inter', sans-serif;
