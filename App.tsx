@@ -14,7 +14,7 @@ import { generateId } from './utils/dateUtils';
 
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.4.7';
+const APP_VERSION = '2.4.8';
 const MAX_PIN_ATTEMPTS = 5;
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
