@@ -82,7 +82,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
       case 'synced': return <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" title="All data synced" />;
       case 'error': return <div className="w-2.5 h-2.5 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.5)]" title="Sync Error" />;
       case 'offline': return <div className="w-2.5 h-2.5 bg-slate-300 rounded-full" title="Offline" />;
-      case 'unconfigured': return <div className="w-2.5 h-2.5 bg-slate-200 rounded-full border border-slate-300" title="Not Signed In" />;
+      case 'unconfigured': return <div className="w-2.5 h-2.5 bg-slate-200 rounded-full border border-slate-300" title="Not signed in" />;
       default: return null;
     }
   };
@@ -93,7 +93,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
       case 'syncing': return 'Syncing...';
       case 'offline': return 'Offline';
       case 'error': return 'Error';
-      case 'unconfigured': return 'Not Signed In';
+      case 'unconfigured': return 'Not signed in';
       default: return syncStatus;
     }
   };
