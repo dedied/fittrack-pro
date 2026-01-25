@@ -15,6 +15,7 @@ const PwaInstallButton: React.FC = () => {
       e.preventDefault();
       setDeferredPrompt(e);
       (window as any).deferredPrompt = e; // Keep global in sync
+      console.log("Install prompt captured in component");
     };
 
     const handleAppInstalled = () => {
@@ -38,11 +39,16 @@ const PwaInstallButton: React.FC = () => {
     const promptEvent = deferredPrompt || (window as any).deferredPrompt;
 
     if (!promptEvent) {
+      // Logic for when we don't have the prompt event (iOS or Desktop Edge/Chrome manual install)
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-      if (isIOS) {
+      
+      if (isInstalled) {
+         showToast("App is already installed.");
+      } else if (isIOS) {
         showToast("Tap 'Share' then 'Add to Home Screen'");
       } else {
-        showToast("App is already installed or install prompt is not available on this browser.");
+        // Desktop/Android fallback: Guide user to browser menu
+        showToast("Install via browser menu or address bar (+) icon");
       }
       return;
     }
@@ -56,7 +62,7 @@ const PwaInstallButton: React.FC = () => {
     
     setDeferredPrompt(null);
     (window as any).deferredPrompt = null;
-  }, [deferredPrompt]);
+  }, [deferredPrompt, isInstalled]);
 
   return (
     <button 
@@ -66,7 +72,7 @@ const PwaInstallButton: React.FC = () => {
     >
       <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center ${isInstalled ? 'bg-emerald-50 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
         {isInstalled ? (
-            <svg xmlns="http://www.w.3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
         ) : (
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
         )}

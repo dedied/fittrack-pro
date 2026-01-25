@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#4f46e5">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/2964/2964514.png">
   <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2964/2964514.png">
   <link rel="manifest" href="manifest.json">
   <title>FitTrack Pro</title>
@@ -98,6 +99,8 @@
   <script>
     if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost')) {
       window.addEventListener('load', () => {
+        // Use a relative path to handle subdirectories (GitHub Pages)
+        // If the app is at /repo/, this resolves to /repo/sw.js
         navigator.serviceWorker.register('sw.js')
           .then(reg => {
             console.log('Service Worker Registered');
