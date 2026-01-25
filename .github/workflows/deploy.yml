@@ -60,6 +60,7 @@ jobs:
           echo "Copy the output below into Google AI Studio to generate a fix:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "The following is the output from some automated testing of the application that highlights errors. Please examine the errors and provide a fix." >> $GITHUB_STEP_SUMMARY
           cat checkly-output.txt >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
