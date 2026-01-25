@@ -7,10 +7,10 @@ import SettingsView from './components/SettingsView';
 import HistoryView from './components/HistoryView';
 import AppDialogs from './components/AppDialogs';
 import PinLockScreen from './components/PinLockScreen';
-import TestDashboard from './components/TestDashboard';
 import { WorkoutLog, EXERCISES, ExerciseType } from './types';
 import { secureStore } from './utils/secureStore';
 import { generateId } from './utils/dateUtils';
+import { showToast } from './utils/toast';
 
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
@@ -34,8 +34,6 @@ const App: React.FC = () => {
   const [showSyncErrorDialog, setShowSyncErrorDialog] = useState(false);
   const [showCloudWipeDialog, setShowCloudWipeDialog] = useState(false);
   const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
-  const [showTestDashboard, setShowTestDashboard] = useState(false);
-  const [devModeCount, setDevModeCount] = useState(0);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pinError, setPinError] = useState<string | null>(null);
@@ -52,11 +50,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('unconfigured');
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  
-  // We initialize deferredPrompt from the window object if it was caught before React mounted
-  const [deferredPrompt, setDeferredPrompt] = useState<any>((window as any).deferredPrompt || null);
-  
+
   const [logs, setLogs] = useState<WorkoutLog[]>(() => {
     try {
       const saved = localStorage.getItem('fit_logs');
@@ -85,32 +79,14 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    if (isStandalone || localStorage.getItem('fit_app_installed') === 'true') setIsInstalled(true);
-
-    // Check if the global prompt was set while we were initializing
-    if ((window as any).deferredPrompt && !deferredPrompt) {
-      setDeferredPrompt((window as any).deferredPrompt);
-    }
-
-    // PWA Install Handlers
-    const handleBeforeInstallPrompt = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      (window as any).deferredPrompt = e; // Keep global in sync
-      console.log("Install prompt captured in React");
+    // Listen for the global toast event
+    const handleShowToast = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail.message) {
+        triggerToast(customEvent.detail.message);
+      }
     };
-    
-    const handleAppInstalled = () => {
-      setIsInstalled(true);
-      localStorage.setItem('fit_app_installed', 'true');
-      setDeferredPrompt(null);
-      (window as any).deferredPrompt = null;
-      triggerToast("App successfully installed!");
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
+    window.addEventListener('show-toast', handleShowToast);
     
     const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     setSupabase(client);
@@ -133,45 +109,12 @@ const App: React.FC = () => {
         setAppState(prev => (prev === 'onboarding' ? 'unlocked' : prev));
       }
     });
+
     return () => {
       subscription.unsubscribe();
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener('show-toast', handleShowToast);
     };
-  }, [triggerToast]); // Removed deferredPrompt dependency to avoid loop
-
-  const handleInstallClick = useCallback(async () => {
-    // Prefer state, fallback to global
-    const promptEvent = deferredPrompt || (window as any).deferredPrompt;
-
-    if (!promptEvent) {
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-      if (isIOS) {
-        triggerToast("Tap 'Share' then 'Add to Home Screen'");
-      } else {
-        triggerToast("Install not ready. Try reloading.");
-      }
-      return;
-    }
-    
-    // Show the install prompt
-    promptEvent.prompt();
-    
-    // Wait for the user to respond to the prompt
-    const { outcome } = await promptEvent.userChoice;
-    
-    if (outcome === 'accepted') {
-      console.log('User accepted the install prompt');
-    } else {
-      console.log('User dismissed the install prompt');
-      triggerToast("Installation cancelled");
-    }
-    
-    // We've used the prompt, so it can't be used again. Discard it.
-    setDeferredPrompt(null);
-    (window as any).deferredPrompt = null;
-    
-  }, [deferredPrompt, triggerToast]);
+  }, [triggerToast]);
 
   const syncWithCloud = async (skip = false): Promise<SyncResult> => {
     if (!supabase || !user) return 'error';
@@ -212,10 +155,10 @@ const App: React.FC = () => {
         },
       });
       if (error) throw error;
-      triggerToast("Code sent to your email!");
+      showToast("Code sent to your email!");
       setOnboardingStep('otp');
     } catch (err: any) {
-      triggerToast(err.message || "Failed to send code");
+      showToast(err.message || "Failed to send code");
     } finally {
       setIsAuthLoading(false);
     }
@@ -229,33 +172,13 @@ const App: React.FC = () => {
     setIsAuthLoading(true);
 
     try {
-      // STRATEGY: Try 'email' (for existing users) first.
-      // If that fails, try 'signup' (for new users).
-      // This is necessary because Supabase issues different token types based on user status
-      // but the client doesn't know the status beforehand.
-      
       let data, error;
-
-      // Attempt 1: Email (Login)
-      const res1 = await supabase.auth.verifyOtp({
-        email: cleanEmail,
-        token: cleanCode,
-        type: 'email'
-      });
-
+      const res1 = await supabase.auth.verifyOtp({ email: cleanEmail, token: cleanCode, type: 'email' });
       data = res1.data;
       error = res1.error;
 
-      // Attempt 2: Signup (Registration) if first attempt failed
       if (error) {
-        // console.log("Email verification failed, trying signup type...");
-        const res2 = await supabase.auth.verifyOtp({
-          email: cleanEmail,
-          token: cleanCode,
-          type: 'signup'
-        });
-        
-        // If second attempt succeeds, use it. If it fails, we keep the error to show user.
+        const res2 = await supabase.auth.verifyOtp({ email: cleanEmail, token: cleanCode, type: 'signup' });
         if (!res2.error && res2.data.session) {
           data = res2.data;
           error = null;
@@ -267,7 +190,7 @@ const App: React.FC = () => {
       if (data && data.session) {
         localStorage.setItem('fit_skip_auth', 'true');
         setAppState('unlocked');
-        triggerToast("Welcome!");
+        showToast("Welcome!");
       } else {
         throw new Error("Verification failed. Please try again.");
       }
@@ -276,7 +199,7 @@ const App: React.FC = () => {
       if (message.toLowerCase().includes('token has expired')) {
         message = "Code has expired. Please request a new one.";
       }
-      triggerToast(message);
+      showToast(message);
     } finally {
       setIsAuthLoading(false);
     }
@@ -288,7 +211,7 @@ const App: React.FC = () => {
     if (!reps || reps <= 0) return;
     const log: WorkoutLog = { id: generateId(), date: entryDate.toISOString(), type: newEntry.type, reps, weight: newEntry.weight ? parseFloat(newEntry.weight) : undefined, owner_id: user?.id };
     setLogs(prev => [log, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    triggerToast("✓ Saved!");
+    showToast("✓ Saved!");
     setNewEntry(prev => ({ ...prev, reps: '' }));
     if (user && supabase && navigator.onLine) await supabase.from('workouts').insert(log);
   };
@@ -309,10 +232,10 @@ const App: React.FC = () => {
     try {
       const { error } = await supabase.rpc('delete_user');
       if (error) throw error;
-      triggerToast("Account deleted permanently");
+      showToast("Account deleted permanently");
       await handleLogout();
     } catch (err: any) {
-      triggerToast("Deletion failed: " + err.message);
+      showToast("Deletion failed: " + err.message);
       setIsLoggingOut(false);
     } finally {
       setShowDeleteAccountConfirm(false);
@@ -320,7 +243,7 @@ const App: React.FC = () => {
   };
 
   const handleExportCSV = () => {
-    if (logs.length === 0) { triggerToast("No data to export"); return; }
+    if (logs.length === 0) { showToast("No data to export"); return; }
     const headers = ["Date", "Type", "Reps", "Weight (kg)"];
     const rows = logs.map(log => [new Date(log.date).toISOString(), log.type, log.reps, log.weight || '']);
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join("\n");
@@ -350,19 +273,11 @@ const App: React.FC = () => {
           }
         });
         setLogs(prev => [...newLogs, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-        triggerToast(`✓ Imported ${newLogs.length} logs!`);
+        showToast(`✓ Imported ${newLogs.length} logs!`);
         if (user && supabase && navigator.onLine) setTimeout(() => syncWithCloud(true), 500);
-      } catch { triggerToast("Import failed"); }
+      } catch { showToast("Import failed"); }
     };
     reader.readAsText(file);
-  };
-
-  const handleVersionClick = () => {
-    setDevModeCount(prev => {
-      const next = prev + 1;
-      if (next >= 3) { setShowTestDashboard(true); return 0; }
-      return next;
-    });
   };
 
   const handleSecurityToggle = async () => {
@@ -370,7 +285,7 @@ const App: React.FC = () => {
     if (isSet || hasBiometrics) {
       await secureStore.clear();
       await updateHasBio();
-      triggerToast("App lock disabled");
+      showToast("App lock disabled");
     } else {
       setAppState('creatingPin');
     }
@@ -418,7 +333,7 @@ const App: React.FC = () => {
         if (window.PublicKeyCredential) {
           try {
             const success = await secureStore.enableBiometrics(p);
-            if (success) triggerToast("Biometrics enabled!");
+            if (success) showToast("Biometrics enabled!");
           } catch (e) {
             console.warn("Biometric enroll skipped/failed", e);
           }
@@ -526,10 +441,10 @@ const App: React.FC = () => {
       {viewingHistory ? (
         <HistoryView viewingHistory={viewingHistory} onClose={() => setViewingHistory(null)} totalsTimeFrame={totalsTimeFrame} historyLogs={historyLogs} onDeleteLog={setLogToDelete} />
       ) : (
-        <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={() => syncWithCloud()} onShowToast={triggerToast}>
+        <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={() => syncWithCloud()}>
           {activeTab === 'dashboard' && <DashboardView logs={logs} totalsTimeFrame={totalsTimeFrame} setTotalsTimeFrame={setTotalsTimeFrame} filteredStats={filteredStats} maxStats={maxStats} setViewingHistory={setViewingHistory} />}
           {activeTab === 'add' && <AddLogView newEntry={newEntry} setNewEntry={setNewEntry} entryDate={entryDate} handleDateChange={e => setEntryDate(new Date(e.target.value))} handleAddLog={handleAddLog} />}
-          {activeTab === 'settings' && <SettingsView user={user} isInstalled={isInstalled} handleInstallClick={handleInstallClick} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={handleSecurityToggle} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onAuthAction={() => { 
+          {activeTab === 'settings' && <SettingsView user={user} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={handleSecurityToggle} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onAuthAction={() => { 
             if (user) { 
               if (logoutConfirm) handleLogout(); 
               else setLogoutConfirm(true); 
@@ -537,7 +452,7 @@ const App: React.FC = () => {
               setAppState('onboarding'); 
               setOnboardingStep('email'); 
             } 
-          }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} onVersionClick={handleVersionClick} hasLocalData={logs.length > 0} />}
+          }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} hasLocalData={logs.length > 0} />}
         </Layout>
       )}
       <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" />
@@ -548,7 +463,7 @@ const App: React.FC = () => {
         onSyncErrorClose={() => setShowSyncErrorDialog(false)} 
         onSyncRetry={() => syncWithCloud()} 
         showCloudWipeDialog={showCloudWipeDialog} 
-        onCloudKeepLocal={() => { setShowCloudWipeDialog(false); syncWithCloud(true); triggerToast("Uploading local data..."); }} 
+        onCloudKeepLocal={() => { setShowCloudWipeDialog(false); syncWithCloud(true); showToast("Uploading local data..."); }} 
         onCloudOverwriteLocal={() => { setLogs([]); setShowCloudWipeDialog(false); }} 
         showClearDataConfirm={showClearDataConfirm} 
         onClearDataCancel={() => setShowClearDataConfirm(false)} 
@@ -558,14 +473,14 @@ const App: React.FC = () => {
               const { error } = await supabase.from('workouts').delete().eq('owner_id', user.id);
               if (error) throw error;
             } catch (err) {
-              triggerToast("Error clearing cloud data");
+              showToast("Error clearing cloud data");
               setShowClearDataConfirm(false);
               return;
             }
           }
           setLogs([]); 
           setShowClearDataConfirm(false);
-          triggerToast("All data deleted.");
+          showToast("All data deleted.");
         }} 
         logToDelete={logToDelete} 
         onDeleteLogCancel={() => setLogToDelete(null)} 
@@ -576,7 +491,6 @@ const App: React.FC = () => {
         showPrivacyDialog={showPrivacyDialog} 
         onPrivacyClose={() => setShowPrivacyDialog(false)} 
       />
-      {showTestDashboard && <TestDashboard onClose={() => setShowTestDashboard(false)} logs={logs} />}
       {toastMessage && <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold toast-animate text-white bg-slate-900 border border-slate-700/50 backdrop-blur-md">{toastMessage}</div>}
     </>
   );

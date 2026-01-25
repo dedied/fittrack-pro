@@ -1,9 +1,8 @@
 import React from 'react';
+import PwaInstallButton from './PwaInstallButton';
 
 interface SettingsViewProps {
   user: any;
-  isInstalled: boolean;
-  handleInstallClick: () => void;
   syncStatus: string;
   onSyncManual: () => void;
   onImportClick: () => void;
@@ -18,38 +17,21 @@ interface SettingsViewProps {
   isLoggingOut: boolean;
   logoutConfirm: boolean;
   appVersion: string;
-  onVersionClick?: () => void;
   hasLocalData: boolean;
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({
-  user, isInstalled, handleInstallClick, syncStatus, onSyncManual, onImportClick,
+  user, syncStatus, onSyncManual, onImportClick,
   onExportCSV, onClearDataTrigger, onDeleteAccountTrigger, hasBiometrics,
   onSecurityToggle, onChangePin, onPrivacyClick, onAuthAction, isLoggingOut,
-  logoutConfirm, appVersion, onVersionClick, hasLocalData
+  logoutConfirm, appVersion, hasLocalData
 }) => {
   return (
     <div className="max-w-2xl mx-auto space-y-8 py-6">
       <header className="text-center font-black text-3xl text-slate-800">App Preferences</header>
 
       {/* PWA Section */}
-      <button 
-         onClick={!isInstalled ? handleInstallClick : undefined}
-         disabled={isInstalled}
-         className={`w-full bg-white rounded-[2.5rem] p-8 border border-slate-100 flex items-center gap-6 shadow-sm transition-all text-left ${!isInstalled ? 'active:scale-[0.98] cursor-pointer hover:border-indigo-200' : 'cursor-default'}`}
-      >
-         <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center ${isInstalled ? 'bg-emerald-50 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
-           {isInstalled ? (
-               <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-           ) : (
-               <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-           )}
-         </div>
-         <div className="flex-1">
-           <p className="font-black text-xl text-slate-800 leading-tight">{isInstalled ? "Successfully Installed" : "Enable Native App"}</p>
-           <p className="text-[11px] font-bold uppercase text-slate-400 tracking-widest mt-1">{isInstalled ? "Ready for offline training" : "Add to home screen for best experience"}</p>
-         </div>
-      </button>
+      <PwaInstallButton />
 
       {/* Data Management Section */}
       <section>
@@ -131,7 +113,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
       </section>
       
       <div className="text-center pb-12 pt-4">
-         <button onClick={onVersionClick} className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] hover:text-indigo-400 transition-colors">FitTrack Build v{appVersion}</button>
+         <div className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">FitTrack Build v{appVersion}</div>
       </div>
     </div>
   );
