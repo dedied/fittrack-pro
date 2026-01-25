@@ -17,6 +17,7 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,17 +30,49 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # ---------------------------
+      # 1. Run Checkly tests first
+      # ---------------------------
+      - name: Run Checkly tests
+        id: checkly
+        env:
+          CHECKLY_API_KEY: ${{ secrets.CHECKLY_API_KEY }}
+        run: |
+          echo "Running Checkly tests..."
+          npx checkly test | tee checkly-output.txt
+
+      # ---------------------------------------------------------
+      # 2. If tests fail, summarise output for Google AI Studio
+      # ---------------------------------------------------------
+      - name: Summarise Checkly failures for AI Studio
+        if: failure()
+        run: |
+          echo "### ❌ Checkly tests failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Copy the output below into Google AI Studio to generate a fix:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat checkly-output.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      # -----------------------------------------
+      # 3. Only build + deploy if tests succeeded
+      # -----------------------------------------
       - name: Build
+        if: success()
         run: npm run build
 
       - name: Setup Pages
+        if: success()
         uses: actions/configure-pages@v4
 
       - name: Upload artifact
+        if: success()
         uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
 
       - name: Deploy to GitHub Pages
+        if: success()
         id: deployment
         uses: actions/deploy-pages@v4
