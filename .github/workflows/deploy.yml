@@ -68,20 +68,16 @@ jobs:
       # 3. Only build + deploy if tests succeeded
       # -----------------------------------------
       - name: Build
-        if: success()
         run: npm run build
 
       - name: Setup Pages
-        if: success()
         uses: actions/configure-pages@v4
 
       - name: Upload artifact
-        if: success()
         uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
 
       - name: Deploy to GitHub Pages
-        if: success()
         id: deployment
         uses: actions/deploy-pages@v4
