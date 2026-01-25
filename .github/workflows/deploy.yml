@@ -41,7 +41,7 @@ jobs:
         run: |
           echo "Triggering Checkly cloud tests..."
           # Replace chk_ABC123 with your actual Checkly check ID
-          npx checkly trigger chk_ABC123 | tee checkly-output.txt
+          npx checkly trigger f3fd99b7-5fdb-4e48-8310-b856a3afaf3f | tee checkly-output.txt
 
       # ---------------------------------------------------------
       # 2. If tests fail, summarise output for Google AI Studio
