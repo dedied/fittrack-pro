@@ -1,75 +1,94 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { showToast } from '../utils/toast';
+import React, { useEffect, useState, useCallback } from "react";
+import { showToast } from "../utils/toast";
 
 const PwaInstallButton: React.FC = () => {
-  const [isInstalled, setIsInstalled] = useState(
-    () => window.matchMedia('(display-mode: standalone)').matches || localStorage.getItem('fit_app_installed') === 'true'
-  );
-  
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(
-    () => (window as any).deferredPrompt || null
-  );
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
 
+  // Detect install state + capture install prompt
   useEffect(() => {
+    // Detect if already running as PWA
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as any).standalone === true;
+
+    if (standalone) {
+      setIsInstalled(true);
+    }
+
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      (window as any).deferredPrompt = e; // Keep global in sync
-      console.log("Install prompt captured in PWA Button component");
+      console.log("beforeinstallprompt fired");
     };
 
     const handleAppInstalled = () => {
       setIsInstalled(true);
-      localStorage.setItem('fit_app_installed', 'true');
-      setDeferredPrompt(null);
-      (window as any).deferredPrompt = null;
-      showToast("App successfully installed!");
+      showToast("App installed successfully");
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);
 
   const handleInstallClick = useCallback(async () => {
-    const promptEvent = deferredPrompt || (window as any).deferredPrompt;
+    const ua = navigator.userAgent;
 
-    if (!promptEvent) {
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-      if (isIOS) {
-        showToast("Tap 'Share' then 'Add to Home Screen'");
+    // 1) If Chrome/Edge gave us a real install prompt
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+
+      if (choice.outcome === "accepted") {
+        showToast("Installing…");
       } else {
-        showToast("App is already installed or install prompt is not available on this browser.");
+        showToast("Installation cancelled");
       }
+
+      setDeferredPrompt(null);
       return;
     }
-    
-    promptEvent.prompt();
-    const { outcome } = await promptEvent.userChoice;
-    
-    if (outcome !== 'accepted') {
-      showToast("Installation cancelled");
+
+    // 2) iOS Safari (no prompt)
+    if (/iPhone|iPad|iPod/.test(ua)) {
+      showToast("Tap the Share icon → 'Add to Home Screen'");
+      return;
     }
-    
-    setDeferredPrompt(null);
-    (window as any).deferredPrompt = null;
+
+    // 3) macOS Safari (supports PWA install, but NO beforeinstallprompt)
+    if (/Macintosh/.test(ua) && ua.includes("Safari") && !ua.includes("Chrome")) {
+      showToast("In Safari: File → Add to Dock");
+      return;
+    }
+
+    // 4) Firefox or unsupported browsers
+    showToast("Your browser does not support app installation");
   }, [deferredPrompt]);
 
   return (
-    <button 
+    <button
       onClick={!isInstalled ? handleInstallClick : undefined}
       disabled={isInstalled}
-      className={`w-full bg-white rounded-[2.5rem] p-8 border border-slate-100 flex items-center gap-6 shadow-sm transition-all text-left ${!isInstalled ? 'active:scale-[0.98] cursor-pointer hover:border-indigo-200' : 'cursor-default'}`}
+      className={`w-full bg-white rounded-[2.5rem] p-8 border border-slate-100 flex items-center gap-6 shadow-sm transition-all text-left ${
+        !isInstalled
+          ? "active:scale-[0.98] cursor-pointer hover:border-indigo-200"
+          : "cursor-default"
+      }`}
     >
-      <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center ${isInstalled ? 'bg-emerald-50 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
+      <div
+        className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center ${
+          isInstalled ? "bg-emerald-50 text-emerald-600" : "bg-indigo-50 text-indigo-600"
+        }`}
+      >
         {isInstalled ? (
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
         ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
         )}
       </div>
       <div className="flex-1">
