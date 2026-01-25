@@ -41,7 +41,13 @@ jobs:
         run: |
           echo "Triggering Checkly cloud tests..."
           # Replace chk_ABC123 with your actual Checkly check ID
-          npx checkly trigger f3fd99b7-5fdb-4e48-8310-b856a3afaf3f | tee checkly-output.txt
+          npx checkly trigger | tee checkly-output.txt
+          
+        # Fail if Checkly output contains "Error:"
+        if grep -q "Error:" checkly-output.txt; then
+          echo "Checkly reported an error. Failing the workflow."
+          exit 1
+        fi
 
       # ---------------------------------------------------------
       # 2. If tests fail, summarise output for Google AI Studio
