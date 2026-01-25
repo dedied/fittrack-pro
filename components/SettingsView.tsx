@@ -19,13 +19,14 @@ interface SettingsViewProps {
   logoutConfirm: boolean;
   appVersion: string;
   onVersionClick?: () => void;
+  hasLocalData: boolean;
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({
   user, isInstalled, handleInstallClick, syncStatus, onSyncManual, onImportClick,
   onExportCSV, onClearDataTrigger, onDeleteAccountTrigger, hasBiometrics,
   onSecurityToggle, onChangePin, onPrivacyClick, onAuthAction, isLoggingOut,
-  logoutConfirm, appVersion, onVersionClick
+  logoutConfirm, appVersion, onVersionClick, hasLocalData
 }) => {
   return (
     <div className="max-w-2xl mx-auto space-y-8 py-6">
@@ -81,13 +82,21 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-xl">📥</div>
                   <div className="text-left flex-1 font-bold text-slate-700">Restore from CSV</div>
               </button>
-              <button onClick={onExportCSV} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+              <button 
+                onClick={onExportCSV} 
+                disabled={!hasLocalData}
+                className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 transition-colors disabled:opacity-30 disabled:hover:bg-white"
+              >
                   <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-xl">📤</div>
                   <div className="text-left flex-1 font-bold text-slate-700">Export All Activity</div>
               </button>
-              <button onClick={onClearDataTrigger} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 transition-colors text-red-600">
+              <button 
+                onClick={onClearDataTrigger} 
+                disabled={!user && !hasLocalData}
+                className="w-full p-6 flex items-center gap-4 hover:bg-red-50 transition-colors text-red-600 disabled:opacity-30 disabled:hover:bg-white"
+              >
                   <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-xl">🗑️</div>
-                  <div className="text-left flex-1 font-bold">Wipe Local Database</div>
+                  <div className="text-left flex-1 font-bold">Delete All Data</div>
               </button>
               <button onClick={onDeleteAccountTrigger} disabled={!user} className="w-full p-6 flex items-center gap-4 hover:bg-red-50 transition-colors text-red-600 disabled:opacity-30">
                   <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-xl">💀</div>

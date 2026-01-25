@@ -1,6 +1,7 @@
 import React from 'react';
 
 interface AppDialogsProps {
+  isCloudEnabled: boolean;
   syncError: string | null;
   showSyncErrorDialog: boolean;
   onSyncErrorClose: () => void;
@@ -22,6 +23,7 @@ interface AppDialogsProps {
 }
 
 const AppDialogs: React.FC<AppDialogsProps> = ({
+  isCloudEnabled,
   syncError, showSyncErrorDialog, onSyncErrorClose, onSyncRetry,
   showCloudWipeDialog, onCloudKeepLocal, onCloudOverwriteLocal,
   showClearDataConfirm, onClearDataCancel, onClearDataConfirm,
@@ -51,7 +53,7 @@ const AppDialogs: React.FC<AppDialogsProps> = ({
             <p className="text-slate-500 mt-4 text-sm leading-relaxed">Account cloud is empty but device has logs. Resolve conflict?</p>
             <div className="mt-6 flex flex-col gap-3">
               <button onClick={onCloudKeepLocal} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold">Upload Local</button>
-              <button onClick={onCloudOverwriteLocal} className="w-full bg-slate-100 py-3 rounded-xl font-bold">Wipe Local</button>
+              <button onClick={onCloudOverwriteLocal} className="w-full bg-slate-100 py-3 rounded-xl font-bold">Delete Local Data</button>
             </div>
           </div>
         </div>
@@ -61,10 +63,16 @@ const AppDialogs: React.FC<AppDialogsProps> = ({
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm overlay-animate">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center dialog-animate">
             <h2 className="text-xl font-black text-slate-800">Are you sure?</h2>
-            <p className="text-slate-500 mt-2 text-sm">Delete all logs forever?</p>
+            <p className="text-slate-500 mt-2 text-sm">
+              {isCloudEnabled 
+                ? "Delete all logs from this device and the cloud?" 
+                : "Delete all logs from this device?"}
+            </p>
             <div className="mt-6 flex gap-3">
               <button onClick={onClearDataCancel} className="flex-1 bg-slate-100 py-3 rounded-xl font-bold">Cancel</button>
-              <button onClick={onClearDataConfirm} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold">Delete</button>
+              <button onClick={onClearDataConfirm} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold">
+                {isCloudEnabled ? "Delete Everywhere" : "Delete Local"}
+              </button>
             </div>
           </div>
         </div>

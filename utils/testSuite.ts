@@ -17,6 +17,37 @@ export interface TestDefinition {
 
 export const APP_TEST_SUITE: TestDefinition[] = [
   {
+    id: 'network-status',
+    name: 'Network Status',
+    description: 'Checks if the browser reports an active internet connection.',
+    run: async () => {
+      const online = navigator.onLine;
+      return { 
+        status: online ? 'pass' : 'fail', 
+        details: online ? 'Browser is online.' : 'Browser is reporting offline status.' 
+      };
+    }
+  },
+  {
+    id: 'supabase-config',
+    name: 'Supabase Reachability',
+    description: 'Verifies that the cloud backend API is reachable.',
+    run: async () => {
+      try {
+        const response = await fetch('https://infdrucgfquyujuqtajr.supabase.co/rest/v1/', {
+          method: 'GET',
+          headers: { 'apikey': 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF' }
+        });
+        if (response.ok || response.status === 401) {
+          return { status: 'pass', details: `Cloud API responded with status ${response.status}.` };
+        }
+        throw new Error(`Cloud API returned ${response.status}`);
+      } catch (e: any) {
+        return { status: 'fail', error: e.message };
+      }
+    }
+  },
+  {
     id: '1',
     name: 'LocalStorage',
     description: 'Checks if browser local storage is accessible for reading and writing.',
@@ -72,7 +103,6 @@ export const APP_TEST_SUITE: TestDefinition[] = [
     name: 'Auth: Navigation Logic',
     description: 'Ensures the application can transition from Unlocked Guest mode back to Onboarding/Auth mode.',
     run: async () => {
-      // This test checks if the environment allows for the state transitions required for the fix.
       const skipAuthSet = localStorage.getItem('fit_skip_auth') === 'true';
       return { 
         status: 'pass', 

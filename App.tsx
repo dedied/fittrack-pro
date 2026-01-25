@@ -14,7 +14,7 @@ import { generateId } from './utils/dateUtils';
 
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.4.1';
+const APP_VERSION = '2.4.7';
 const MAX_PIN_ATTEMPTS = 5;
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -42,7 +42,13 @@ const App: React.FC = () => {
   const [hasBiometrics, setHasBiometrics] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
+  
+  // Auth State
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'email' | 'otp'>('welcome');
+  const [email, setEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  
   const [user, setUser] = useState<any>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('unconfigured');
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
@@ -84,7 +90,13 @@ const App: React.FC = () => {
       }
     };
     init();
-    const { data: { subscription } } = client.auth.onAuthStateChange((_, s) => setUser(s?.user ?? null));
+    
+    const { data: { subscription } } = client.auth.onAuthStateChange((_, s) => {
+      setUser(s?.user ?? null);
+      if (s?.user) {
+        setAppState(prev => (prev === 'onboarding' ? 'unlocked' : prev));
+      }
+    });
     return () => subscription.unsubscribe();
   }, []);
 
@@ -115,6 +127,90 @@ const App: React.FC = () => {
 
   useEffect(() => { if (appState === 'unlocked' && user && supabase) syncWithCloud(); }, [appState, user, supabase]);
 
+  const handleSendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = email.trim().toLowerCase();
+    if (!supabase || !cleanEmail) return;
+    setIsAuthLoading(true);
+    setOtpCode(''); // Clear previous code
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: cleanEmail,
+        options: {
+          shouldCreateUser: true,
+        },
+      });
+      if (error) throw error;
+      triggerToast("Code sent to your email!");
+      setOnboardingStep('otp');
+    } catch (err: any) {
+      triggerToast(err.message || "Failed to send code");
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanCode = otpCode.trim();
+    if (!supabase || !cleanEmail || !cleanCode) return;
+    setIsAuthLoading(true);
+
+    try {
+      // STRATEGY: Try 'email' (for existing users) first.
+      // If that fails, try 'signup' (for new users).
+      // This is necessary because Supabase issues different token types based on user status
+      // but the client doesn't know the status beforehand.
+      
+      let data, error;
+
+      // Attempt 1: Email (Login)
+      const res1 = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanCode,
+        type: 'email'
+      });
+
+      data = res1.data;
+      error = res1.error;
+
+      // Attempt 2: Signup (Registration) if first attempt failed
+      if (error) {
+        // console.log("Email verification failed, trying signup type...");
+        const res2 = await supabase.auth.verifyOtp({
+          email: cleanEmail,
+          token: cleanCode,
+          type: 'signup'
+        });
+        
+        // If second attempt succeeds, use it. If it fails, we keep the error to show user.
+        if (!res2.error && res2.data.session) {
+          data = res2.data;
+          error = null;
+        }
+      }
+
+      if (error) throw error;
+
+      if (data && data.session) {
+        localStorage.setItem('fit_skip_auth', 'true');
+        setAppState('unlocked');
+        triggerToast("Welcome!");
+      } else {
+        throw new Error("Verification failed. Please try again.");
+      }
+    } catch (err: any) {
+      let message = err.message || "Invalid verification code";
+      if (message.toLowerCase().includes('token has expired')) {
+        message = "Code has expired. Please request a new one.";
+      }
+      triggerToast(message);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
   const handleAddLog = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const reps = parseInt(newEntry.reps);
@@ -134,6 +230,22 @@ const App: React.FC = () => {
       localStorage.removeItem('fit_skip_auth');
       setUser(null); setAppState('onboarding'); setOnboardingStep('welcome');
     } finally { setIsLoggingOut(false); setLogoutConfirm(false); }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!supabase || !user) return;
+    setIsLoggingOut(true);
+    try {
+      const { error } = await supabase.rpc('delete_user');
+      if (error) throw error;
+      triggerToast("Account deleted permanently");
+      await handleLogout();
+    } catch (err: any) {
+      triggerToast("Deletion failed: " + err.message);
+      setIsLoggingOut(false);
+    } finally {
+      setShowDeleteAccountConfirm(false);
+    }
   };
 
   const handleExportCSV = () => {
@@ -250,10 +362,91 @@ const App: React.FC = () => {
   
   if (appState === 'onboarding') return (
     <div className="fixed inset-0 bg-indigo-600 z-50 p-8 flex flex-col items-center justify-center text-white text-center">
-      <h1 className="text-3xl font-black mb-4">FitTrack Pro</h1>
-      {onboardingStep === 'welcome' && <><button onClick={() => setOnboardingStep('email')} className="w-full bg-white text-indigo-600 py-4 rounded-xl font-bold mb-4">Sign In</button><button onClick={() => { localStorage.setItem('fit_skip_auth', 'true'); setAppState('unlocked'); }} className="text-indigo-200">Skip for now</button></>}
-      {onboardingStep === 'email' && <form onSubmit={e => { e.preventDefault(); setOnboardingStep('otp'); }} className="w-full"><input type="email" placeholder="Email" className="w-full p-4 rounded-xl bg-white/10 text-white mb-4 border border-white/20" /><button className="w-full bg-white text-indigo-600 py-4 rounded-xl font-bold">Send Code</button></form>}
-      {onboardingStep === 'otp' && <form onSubmit={e => { e.preventDefault(); setAppState('unlocked'); }} className="w-full"><input type="text" placeholder="Code" className="w-full p-4 rounded-xl bg-white/10 text-white mb-4 border border-white/20 text-center text-2xl tracking-widest" /><button className="w-full bg-white text-indigo-600 py-4 rounded-xl font-bold">Verify</button></form>}
+      <div className="mb-8">
+        <div className="w-20 h-20 bg-white/20 rounded-3xl mx-auto mb-4 flex items-center justify-center text-4xl">⚡</div>
+        <h1 className="text-3xl font-black">FitTrack Pro</h1>
+        <p className="text-indigo-200 text-sm mt-2 font-medium">Your progress, everywhere.</p>
+      </div>
+
+      {onboardingStep === 'welcome' && (
+        <div className="w-full max-w-xs space-y-4">
+          <button onClick={() => setOnboardingStep('email')} className="w-full bg-white text-indigo-600 py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-xl shadow-indigo-800/20 active:scale-95 transition-all">Sign In with Email</button>
+          <button onClick={() => { localStorage.setItem('fit_skip_auth', 'true'); setAppState('unlocked'); }} className="text-indigo-200 text-xs font-bold uppercase tracking-widest py-2">Continue as Guest</button>
+        </div>
+      )}
+
+      {onboardingStep === 'email' && (
+        <form onSubmit={handleSendCode} className="w-full max-w-xs space-y-4">
+          <div className="space-y-1">
+            <input 
+              type="email" 
+              required
+              placeholder="Enter your email" 
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              disabled={isAuthLoading}
+              className="w-full p-4 rounded-xl bg-white/10 text-white border border-white/20 outline-none focus:bg-white/20 focus:border-white/40 transition-all placeholder:text-white/40 text-center" 
+            />
+          </div>
+          <button 
+            type="submit" 
+            disabled={isAuthLoading || !email}
+            className="w-full bg-white text-indigo-600 py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all disabled:opacity-50"
+          >
+            {isAuthLoading ? "Sending..." : "Send Code"}
+          </button>
+          <button 
+            type="button"
+            onClick={() => setOnboardingStep('welcome')}
+            className="text-indigo-200 text-xs font-bold uppercase tracking-widest py-2"
+          >
+            Back
+          </button>
+        </form>
+      )}
+
+      {onboardingStep === 'otp' && (
+        <form onSubmit={handleVerifyCode} className="w-full max-w-xs space-y-4">
+          <p className="text-xs text-indigo-100 mb-2">Verification code sent to<br/><span className="font-bold">{email}</span></p>
+          <div className="space-y-1">
+            <input 
+              type="text" 
+              required
+              inputMode="numeric"
+              placeholder="6-digit code" 
+              value={otpCode}
+              onChange={e => setOtpCode(e.target.value)}
+              disabled={isAuthLoading}
+              maxLength={6}
+              className="w-full p-4 rounded-xl bg-white/10 text-white border border-white/20 outline-none focus:bg-white/20 focus:border-white/40 transition-all placeholder:text-white/40 text-center text-2xl tracking-[0.5em] font-black" 
+            />
+          </div>
+          <button 
+            type="submit" 
+            disabled={isAuthLoading || otpCode.length < 6}
+            className="w-full bg-white text-indigo-600 py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all disabled:opacity-50"
+          >
+            {isAuthLoading ? "Verifying..." : "Verify & Continue"}
+          </button>
+          <div className="flex flex-col gap-2">
+            <button 
+              type="button"
+              onClick={handleSendCode}
+              disabled={isAuthLoading}
+              className="text-indigo-200 text-[10px] font-black uppercase tracking-widest"
+            >
+              Resend Code
+            </button>
+            <button 
+              type="button"
+              onClick={() => setOnboardingStep('email')}
+              className="text-indigo-200 text-xs font-bold uppercase tracking-widest py-2"
+            >
+              Change Email
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 
@@ -273,11 +466,45 @@ const App: React.FC = () => {
               setAppState('onboarding'); 
               setOnboardingStep('email'); 
             } 
-          }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} onVersionClick={handleVersionClick} />}
+          }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} onVersionClick={handleVersionClick} hasLocalData={logs.length > 0} />}
         </Layout>
       )}
       <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" />
-      <AppDialogs syncError={syncError} showSyncErrorDialog={showSyncErrorDialog} onSyncErrorClose={() => setShowSyncErrorDialog(false)} onSyncRetry={() => syncWithCloud()} showCloudWipeDialog={showCloudWipeDialog} onCloudKeepLocal={() => syncWithCloud(true)} onCloudOverwriteLocal={() => { setLogs([]); setShowCloudWipeDialog(false); }} showClearDataConfirm={showClearDataConfirm} onClearDataCancel={() => setShowClearDataConfirm(false)} onClearDataConfirm={() => { setLogs([]); setShowClearDataConfirm(false); }} logToDelete={logToDelete} onDeleteLogCancel={() => setLogToDelete(null)} onDeleteLogConfirm={() => { setLogs(prev => prev.filter(l => l.id !== logToDelete)); setLogToDelete(null); }} showDeleteAccountConfirm={showDeleteAccountConfirm} onDeleteAccountCancel={() => setShowDeleteAccountConfirm(false)} onDeleteAccountConfirm={handleLogout} showPrivacyDialog={showPrivacyDialog} onPrivacyClose={() => setShowPrivacyDialog(false)} />
+      <AppDialogs 
+        isCloudEnabled={!!user}
+        syncError={syncError} 
+        showSyncErrorDialog={showSyncErrorDialog} 
+        onSyncErrorClose={() => setShowSyncErrorDialog(false)} 
+        onSyncRetry={() => syncWithCloud()} 
+        showCloudWipeDialog={showCloudWipeDialog} 
+        onCloudKeepLocal={() => { setShowCloudWipeDialog(false); syncWithCloud(true); triggerToast("Uploading local data..."); }} 
+        onCloudOverwriteLocal={() => { setLogs([]); setShowCloudWipeDialog(false); }} 
+        showClearDataConfirm={showClearDataConfirm} 
+        onClearDataCancel={() => setShowClearDataConfirm(false)} 
+        onClearDataConfirm={async () => { 
+          if (user && supabase && navigator.onLine) {
+            try {
+              const { error } = await supabase.from('workouts').delete().eq('owner_id', user.id);
+              if (error) throw error;
+            } catch (err) {
+              triggerToast("Error clearing cloud data");
+              setShowClearDataConfirm(false);
+              return;
+            }
+          }
+          setLogs([]); 
+          setShowClearDataConfirm(false);
+          triggerToast("All data deleted.");
+        }} 
+        logToDelete={logToDelete} 
+        onDeleteLogCancel={() => setLogToDelete(null)} 
+        onDeleteLogConfirm={() => { setLogs(prev => prev.filter(l => l.id !== logToDelete)); setLogToDelete(null); }} 
+        showDeleteAccountConfirm={showDeleteAccountConfirm} 
+        onDeleteAccountCancel={() => setShowDeleteAccountConfirm(false)} 
+        onDeleteAccountConfirm={handleDeleteAccount} 
+        showPrivacyDialog={showPrivacyDialog} 
+        onPrivacyClose={() => setShowPrivacyDialog(false)} 
+      />
       {showTestDashboard && <TestDashboard onClose={() => setShowTestDashboard(false)} logs={logs} />}
       {toastMessage && <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold toast-animate text-white bg-slate-900 border border-slate-700/50 backdrop-blur-md">{toastMessage}</div>}
     </>
