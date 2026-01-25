@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4';
 import Layout, { TabType, SyncStatus } from './components/Layout';
 import DashboardView from './components/DashboardView';
@@ -64,6 +64,8 @@ const App: React.FC = () => {
   useEffect(() => { logsRef.current = logs; }, [logs]);
   const [newEntry, setNewEntry] = useState({ type: 'pushups' as ExerciseType, reps: '', weight: '' });
   const [entryDate, setEntryDate] = useState(new Date());
+  
+  const toastTimeoutRef = useRef<any>(null);
 
   useEffect(() => { localStorage.setItem('fit_totals_timeframe', totalsTimeFrame); }, [totalsTimeFrame]);
   useEffect(() => { localStorage.setItem('fit_logs', JSON.stringify(logs)); }, [logs]);
@@ -73,7 +75,11 @@ const App: React.FC = () => {
     setHasBiometrics(bio);
   };
   
-  const triggerToast = (msg: string) => { setToastMessage(msg); setTimeout(() => setToastMessage(null), 3000); };
+  const triggerToast = useCallback((msg: string) => { 
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastMessage(msg); 
+    toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3000); 
+  }, []);
 
   useEffect(() => {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
@@ -83,6 +89,7 @@ const App: React.FC = () => {
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
+      console.log("Install prompt captured");
     };
     
     const handleAppInstalled = () => {
@@ -121,15 +128,15 @@ const App: React.FC = () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
-  }, []);
+  }, [triggerToast]);
 
-  const handleInstallClick = () => {
+  const handleInstallClick = useCallback(() => {
     if (!deferredPrompt) {
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
       if (isIOS) {
         triggerToast("Tap 'Share' then 'Add to Home Screen'");
       } else {
-        triggerToast("Installation not available right now");
+        triggerToast("App is already installed or not available");
       }
       return;
     }
@@ -141,7 +148,7 @@ const App: React.FC = () => {
       }
       setDeferredPrompt(null);
     });
-  };
+  }, [deferredPrompt, triggerToast]);
 
   const syncWithCloud = async (skip = false): Promise<SyncResult> => {
     if (!supabase || !user) return 'error';

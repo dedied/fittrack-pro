@@ -33,9 +33,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({
       <header className="text-center font-black text-3xl text-slate-800">App Preferences</header>
 
       {/* PWA Section */}
-      <section 
+      <button 
          onClick={!isInstalled ? handleInstallClick : undefined}
-         className={`w-full bg-white rounded-[2.5rem] p-8 border border-slate-100 flex items-center gap-6 shadow-sm transition-all ${!isInstalled ? 'active:scale-[0.98] cursor-pointer hover:border-indigo-200' : 'cursor-default'}`}
+         disabled={isInstalled}
+         className={`w-full bg-white rounded-[2.5rem] p-8 border border-slate-100 flex items-center gap-6 shadow-sm transition-all text-left ${!isInstalled ? 'active:scale-[0.98] cursor-pointer hover:border-indigo-200' : 'cursor-default'}`}
       >
          <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center ${isInstalled ? 'bg-emerald-50 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
            {isInstalled ? (
@@ -44,11 +45,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
            )}
          </div>
-         <div className="text-left flex-1">
+         <div className="flex-1">
            <p className="font-black text-xl text-slate-800 leading-tight">{isInstalled ? "Successfully Installed" : "Enable Native App"}</p>
            <p className="text-[11px] font-bold uppercase text-slate-400 tracking-widest mt-1">{isInstalled ? "Ready for offline training" : "Add to home screen for best experience"}</p>
          </div>
-      </section>
+      </button>
 
       {/* Data Management Section */}
       <section>
