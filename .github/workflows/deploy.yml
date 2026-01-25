@@ -43,11 +43,11 @@ jobs:
           # Replace chk_ABC123 with your actual Checkly check ID
           npx checkly trigger | tee checkly-output.txt
           
-        # Fail if Checkly output contains "Error:"
-        if grep -q "Error:" checkly-output.txt; then
-          echo "Checkly reported an error. Failing the workflow."
-          exit 1
-        fi
+          # Fail if Checkly output contains "Error:"
+          if grep -q "Error:" checkly-output.txt; then
+            echo "Checkly reported an error. Failing the workflow."
+            exit 1
+          fi
 
       # ---------------------------------------------------------
       # 2. If tests fail, summarise output for Google AI Studio
