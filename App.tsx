@@ -53,6 +53,7 @@ const App: React.FC = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('unconfigured');
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [logs, setLogs] = useState<WorkoutLog[]>(() => {
     try {
       const saved = localStorage.getItem('fit_logs');
@@ -71,10 +72,28 @@ const App: React.FC = () => {
     const bio = await secureStore.hasBiometrics();
     setHasBiometrics(bio);
   };
+  
+  const triggerToast = (msg: string) => { setToastMessage(msg); setTimeout(() => setToastMessage(null), 3000); };
 
   useEffect(() => {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
     if (isStandalone || localStorage.getItem('fit_app_installed') === 'true') setIsInstalled(true);
+
+    // PWA Install Handlers
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      localStorage.setItem('fit_app_installed', 'true');
+      setDeferredPrompt(null);
+      triggerToast("App successfully installed!");
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
     
     const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     setSupabase(client);
@@ -97,10 +116,32 @@ const App: React.FC = () => {
         setAppState(prev => (prev === 'onboarding' ? 'unlocked' : prev));
       }
     });
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
   }, []);
 
-  const triggerToast = (msg: string) => { setToastMessage(msg); setTimeout(() => setToastMessage(null), 3000); };
+  const handleInstallClick = () => {
+    if (!deferredPrompt) {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+      if (isIOS) {
+        triggerToast("Tap 'Share' then 'Add to Home Screen'");
+      } else {
+        triggerToast("Installation not available right now");
+      }
+      return;
+    }
+    
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult: any) => {
+      if (choiceResult.outcome !== 'accepted') {
+        triggerToast("Installation cancelled");
+      }
+      setDeferredPrompt(null);
+    });
+  };
 
   const syncWithCloud = async (skip = false): Promise<SyncResult> => {
     if (!supabase || !user) return 'error';
@@ -458,7 +499,7 @@ const App: React.FC = () => {
         <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={() => syncWithCloud()} onShowToast={triggerToast}>
           {activeTab === 'dashboard' && <DashboardView logs={logs} totalsTimeFrame={totalsTimeFrame} setTotalsTimeFrame={setTotalsTimeFrame} filteredStats={filteredStats} maxStats={maxStats} setViewingHistory={setViewingHistory} />}
           {activeTab === 'add' && <AddLogView newEntry={newEntry} setNewEntry={setNewEntry} entryDate={entryDate} handleDateChange={e => setEntryDate(new Date(e.target.value))} handleAddLog={handleAddLog} />}
-          {activeTab === 'settings' && <SettingsView user={user} isInstalled={isInstalled} handleInstallClick={() => {}} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={handleSecurityToggle} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onAuthAction={() => { 
+          {activeTab === 'settings' && <SettingsView user={user} isInstalled={isInstalled} handleInstallClick={handleInstallClick} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={handleSecurityToggle} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onAuthAction={() => { 
             if (user) { 
               if (logoutConfirm) handleLogout(); 
               else setLogoutConfirm(true); 
