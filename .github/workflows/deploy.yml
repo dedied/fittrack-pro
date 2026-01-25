@@ -30,16 +30,18 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # ---------------------------
-      # 1. Run Checkly tests first
-      # ---------------------------
-      - name: Run Checkly tests
+      # ----------------------------------------------------
+      # 1. Run Checkly cloud tests BEFORE building/deploying
+      # ----------------------------------------------------
+      - name: Run Checkly cloud tests
         id: checkly
         env:
-          CHECKLY_API_KEY: ${{ secrets.CHECKLY_API_KEY }}
+          CHECKLY_API_KEY: ${{ secrets.CHECKILY_API }}
+          CHECKLY_ACCOUNT_ID: ${{ secrets.CHECKILY_PROJECT_ID }}
         run: |
-          echo "Running Checkly tests..."
-          npx checkly test | tee checkly-output.txt
+          echo "Triggering Checkly cloud tests..."
+          # Replace chk_ABC123 with your actual Checkly check ID
+          npx checkly trigger chk_ABC123 | tee checkly-output.txt
 
       # ---------------------------------------------------------
       # 2. If tests fail, summarise output for Google AI Studio
@@ -47,7 +49,7 @@ jobs:
       - name: Summarise Checkly failures for AI Studio
         if: failure()
         run: |
-          echo "### ❌ Checkly tests failed" >> $GITHUB_STEP_SUMMARY
+          echo "### ❌ Checkly cloud tests failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Copy the output below into Google AI Studio to generate a fix:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
