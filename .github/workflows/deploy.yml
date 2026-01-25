@@ -17,6 +17,7 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,17 +30,51 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # ----------------------------------------------------
+      # 1. Run Checkly cloud tests BEFORE building/deploying.
+      # ----------------------------------------------------
+      - name: Run Checkly cloud tests
+        id: checkly
+        env:
+          CHECKLY_API_KEY: ${{ secrets.CHECKILY_API }}
+          CHECKLY_ACCOUNT_ID: ${{ secrets.CHECKILY_PROJECT_ID }}
+        run: |
+          echo "Triggering Checkly cloud tests..."
+          # Replace chk_ABC123 with your actual Checkly check ID
+          npx checkly trigger f3fd99b7-5fdb-4e48-8310-b856a3afaf3f | tee checkly-output.txt
+
+      # ---------------------------------------------------------
+      # 2. If tests fail, summarise output for Google AI Studio
+      # ---------------------------------------------------------
+      - name: Summarise Checkly failures for AI Studio
+        if: failure()
+        run: |
+          echo "### ❌ Checkly cloud tests failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Copy the output below into Google AI Studio to generate a fix:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat checkly-output.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      # -----------------------------------------
+      # 3. Only build + deploy if tests succeeded
+      # -----------------------------------------
       - name: Build
+        if: success()
         run: npm run build
 
       - name: Setup Pages
+        if: success()
         uses: actions/configure-pages@v4
 
       - name: Upload artifact
+        if: success()
         uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
 
       - name: Deploy to GitHub Pages
+        if: success()
         id: deployment
         uses: actions/deploy-pages@v4
