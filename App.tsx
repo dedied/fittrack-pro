@@ -9,6 +9,7 @@ import HistoryView from './components/HistoryView';
 import ExerciseManager from './components/ExerciseManager';
 import AppDialogs from './components/AppDialogs';
 import PinLockScreen from './components/PinLockScreen';
+import PredictorDialog from './components/PredictorDialog';
 import { WorkoutLog, EXERCISES, ExerciseType, DEFAULT_EXERCISES, UnitSystem, FREE_TIER_LIMIT } from './types';
 import { secureStore } from './utils/secureStore';
 import { generateId } from './utils/dateUtils';
@@ -37,6 +38,7 @@ const App: React.FC = () => {
   const [showCloudWipeDialog, setShowCloudWipeDialog] = useState(false);
   const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
   const [showExerciseManager, setShowExerciseManager] = useState(false);
+  const [showPredictorDialog, setShowPredictorDialog] = useState(false);
   
   // Unit System State
   const [unitSystem, setUnitSystem] = useState<UnitSystem>(() => 
@@ -558,7 +560,7 @@ const App: React.FC = () => {
         <HistoryView unitSystem={unitSystem} viewingHistory={viewingHistory} onClose={() => setViewingHistory(null)} totalsTimeFrame="weekly" historyLogs={historyLogs} onDeleteLog={setLogToDelete} />
       ) : (
         <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={() => syncWithCloud()}>
-          {activeTab === 'dashboard' && <DashboardView unitSystem={unitSystem} logs={logs} activeExercises={activeExercises} maxStats={maxStats} setViewingHistory={setViewingHistory} />}
+          {activeTab === 'dashboard' && <DashboardView unitSystem={unitSystem} logs={logs} activeExercises={activeExercises} maxStats={maxStats} setViewingHistory={setViewingHistory} onOpenPredictor={() => setShowPredictorDialog(true)} />}
           {activeTab === 'add' && <AddLogView unitSystem={unitSystem} activeExercises={activeExercises} newEntry={newEntry} setNewEntry={setNewEntry} entryDate={entryDate} handleDateChange={e => setEntryDate(new Date(e.target.value))} handleAddLog={handleAddLog} />}
           {activeTab === 'settings' && <SettingsView unitSystem={unitSystem} onUnitSystemChange={setUnitSystem} user={user} isPremium={isPremium} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={handleSecurityToggle} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onManageExercises={() => setShowExerciseManager(true)} onAuthAction={() => { if (user) { if (logoutConfirm) handleLogout(); else setLogoutConfirm(true); } else { setAppState('onboarding'); setOnboardingStep('email'); } }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} hasLocalData={logs.length > 0} onGenerateDemoData={handleGenerateDemoData} />}
         </Layout>
@@ -591,6 +593,16 @@ const App: React.FC = () => {
         setLogToDelete(null); 
       }} 
       showDeleteAccountConfirm={showDeleteAccountConfirm} onDeleteAccountCancel={() => setShowDeleteAccountConfirm(false)} onDeleteAccountConfirm={handleDeleteAccount} showPrivacyDialog={showPrivacyDialog} onPrivacyClose={() => setShowPrivacyDialog(false)} />
+      
+      {/* 1RM Predictor Dialog */}
+      <PredictorDialog 
+        isOpen={showPredictorDialog} 
+        onClose={() => setShowPredictorDialog(false)} 
+        activeExercises={activeExercises}
+        logs={logs}
+        unitSystem={unitSystem}
+      />
+
       {toastMessage && <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold toast-animate text-white bg-slate-900 border border-slate-700/50 backdrop-blur-md">{toastMessage}</div>}
     </>
   );

@@ -10,6 +10,7 @@ interface DashboardViewProps {
   activeExercises: ExerciseDefinition[];
   setViewingHistory: (id: ExerciseType) => void;
   unitSystem: UnitSystem;
+  onOpenPredictor?: () => void;
 }
 
 const DashboardView: React.FC<DashboardViewProps> = ({
@@ -17,7 +18,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({
   maxStats,
   activeExercises,
   setViewingHistory,
-  unitSystem
+  unitSystem,
+  onOpenPredictor
 }) => {
   // State to track the currently visible date range on the graph
   const [visibleRange, setVisibleRange] = useState<{start: Date, end: Date} | null>(null);
@@ -140,7 +142,17 @@ const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Personal Bests (All Time) */}
         <section className="space-y-4">
-          <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-2">🏆 All-Time Bests</h2>
+          <div className="flex justify-between items-center ml-2">
+            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">🏆 All-Time Bests</h2>
+            {onOpenPredictor && (
+                <button 
+                  onClick={onOpenPredictor}
+                  className="text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg border border-emerald-100 active:scale-95 transition-all flex items-center gap-1 hover:bg-emerald-100"
+                >
+                   <span>🔮 Predict 1RM</span>
+                </button>
+            )}
+          </div>
           <div className="grid grid-cols-1 gap-4">
             {displayMaxStats.map(ex => (
               <div key={ex.id} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-between group hover:border-indigo-100 transition-colors">
