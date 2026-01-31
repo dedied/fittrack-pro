@@ -2,7 +2,7 @@
 import { WorkoutLog, EXERCISES } from '../types';
 import { generateId } from './dateUtils';
 
-export const generateDemoData = (): WorkoutLog[] => {
+export const generateDemoData = (limitToExercises?: number): WorkoutLog[] => {
   const logs: WorkoutLog[] = [];
   const endDate = new Date();
   const startDate = new Date();
@@ -14,13 +14,21 @@ export const generateDemoData = (): WorkoutLog[] => {
   // Helper to get random float with 1 decimal
   const randomFloat = (min: number, max: number) => Math.round((Math.random() * (max - min) + min) * 10) / 10;
 
+  // Determine which exercises to use
+  let availableExercises = [...EXERCISES];
+  
+  // If a limit is provided (e.g., Free Tier), pick only that many random exercises
+  if (limitToExercises && limitToExercises > 0 && limitToExercises < availableExercises.length) {
+    availableExercises = availableExercises.sort(() => 0.5 - Math.random()).slice(0, limitToExercises);
+  }
+
   // Iterate through every day for the last 2 years
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
     // 40% chance to rest on any given day
     if (Math.random() > 0.6) {
-      // Pick 1 to 3 exercises for this day
-      const numExercises = random(1, 3);
-      const shuffled = [...EXERCISES].sort(() => 0.5 - Math.random());
+      // Pick 1 to 3 exercises from the available pool for this day
+      const numExercises = random(1, Math.min(3, availableExercises.length));
+      const shuffled = [...availableExercises].sort(() => 0.5 - Math.random());
       const selected = shuffled.slice(0, numExercises);
 
       selected.forEach(ex => {

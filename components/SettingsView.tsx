@@ -5,6 +5,7 @@ import { UnitSystem } from '../types';
 
 interface SettingsViewProps {
   user: any;
+  isPremium: boolean;
   syncStatus: string;
   onSyncManual: () => void;
   onImportClick: () => void;
@@ -27,7 +28,7 @@ interface SettingsViewProps {
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({
-  user, syncStatus, onSyncManual, onImportClick,
+  user, isPremium, syncStatus, onSyncManual, onImportClick,
   onExportCSV, onClearDataTrigger, onDeleteAccountTrigger, hasBiometrics,
   onSecurityToggle, onChangePin, onPrivacyClick, onManageExercises, onAuthAction, isLoggingOut,
   logoutConfirm, appVersion, hasLocalData, unitSystem, onUnitSystemChange, onGenerateDemoData
@@ -94,7 +95,14 @@ const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
               <div className="text-left flex-1">
                   <p className="font-black text-lg text-slate-800 truncate">{user ? user.email : "Guest Session"}</p>
-                  {user && <span className="inline-block mt-1 bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">Connected</span>}
+                  <div className="flex gap-2 mt-1">
+                     {user && <span className="bg-emerald-100 text-emerald-700 px-3 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest">Connected</span>}
+                     {isPremium ? (
+                         <span className="bg-amber-100 text-amber-700 px-3 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest">Premium</span>
+                     ) : (
+                         <span className="bg-slate-200 text-slate-500 px-3 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest">Free Tier</span>
+                     )}
+                  </div>
               </div>
               <button
                   onClick={onAuthAction}

@@ -7,11 +7,14 @@ interface ExerciseManagerProps {
   onToggle: (id: ExerciseType) => void;
   onUpdate: (ids: ExerciseType[]) => void;
   onClose: () => void;
+  isPremium: boolean;
 }
 
-const ExerciseManager: React.FC<ExerciseManagerProps> = ({ activeIds, onToggle, onUpdate, onClose }) => {
+const ExerciseManager: React.FC<ExerciseManagerProps> = ({ activeIds, onToggle, onUpdate, onClose, isPremium }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | string>('ALL');
+
+  const FREE_LIMIT = 2;
 
   // Derive unique categories for filter tabs based on the new 'categories' array
   const categories = useMemo(() => {
@@ -40,6 +43,8 @@ const ExerciseManager: React.FC<ExerciseManagerProps> = ({ activeIds, onToggle, 
     });
   }, [searchTerm, filter, activeIds]);
 
+  const limitReached = !isPremium && activeIds.length >= FREE_LIMIT;
+
   return (
     <div className="fixed inset-0 bg-slate-50 z-50 flex flex-col">
       {/* Header */}
@@ -52,7 +57,14 @@ const ExerciseManager: React.FC<ExerciseManagerProps> = ({ activeIds, onToggle, 
         </button>
         <div className="flex-1">
           <h1 className="text-xl font-black text-slate-800 tracking-tight">Manage Exercises</h1>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{activeIds.length} Active</p>
+          <div className="flex items-center gap-2">
+             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                {activeIds.length} Active {(!isPremium && ` / ${FREE_LIMIT} (Free)`) }
+             </p>
+             {!isPremium && limitReached && (
+                 <span className="bg-amber-100 text-amber-600 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">Limit Reached</span>
+             )}
+          </div>
         </div>
       </div>
 
@@ -97,7 +109,13 @@ const ExerciseManager: React.FC<ExerciseManagerProps> = ({ activeIds, onToggle, 
 
         {/* Bulk Actions */}
         <div className="flex justify-end gap-3 pt-1 border-t border-slate-50">
-           <button onClick={() => onUpdate(EXERCISES.map(e => e.id))} className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest hover:bg-indigo-50 px-2 py-1 rounded transition-colors">Select All</button>
+           {isPremium ? (
+               <button onClick={() => onUpdate(EXERCISES.map(e => e.id))} className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest hover:bg-indigo-50 px-2 py-1 rounded transition-colors">Select All</button>
+           ) : (
+               <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 py-1 cursor-not-allowed opacity-50">
+                  <span>Select All (Premium)</span>
+               </div>
+           )}
            <button onClick={() => onUpdate([])} className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:bg-slate-100 px-2 py-1 rounded transition-colors">Deselect All</button>
         </div>
       </div>
@@ -107,11 +125,18 @@ const ExerciseManager: React.FC<ExerciseManagerProps> = ({ activeIds, onToggle, 
         <div className="grid grid-cols-1 gap-3">
           {filteredExercises.map(ex => {
             const isActive = activeIds.includes(ex.id);
+            // Can select if: already active, OR user is premium, OR free limit not reached
+            const canSelect = isActive || isPremium || !limitReached;
+            
             return (
               <button 
                 key={ex.id}
                 onClick={() => onToggle(ex.id)}
-                className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all duration-200 text-left relative overflow-hidden group ${isActive ? 'bg-white border-indigo-600 shadow-lg shadow-indigo-100' : 'bg-slate-50 border-transparent hover:bg-white hover:border-slate-200'}`}
+                disabled={!canSelect}
+                className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all duration-200 text-left relative overflow-hidden group 
+                    ${isActive ? 'bg-white border-indigo-600 shadow-lg shadow-indigo-100' : 'bg-slate-50 border-transparent'}
+                    ${!canSelect ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-white hover:border-slate-200'}
+                `}
               >
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all ${isActive ? 'bg-indigo-50 grayscale-0 scale-110' : 'bg-slate-200 grayscale scale-100'}`}>
                   {ex.icon}

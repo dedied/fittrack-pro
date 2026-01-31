@@ -34,10 +34,30 @@ To enable cloud syncing, set up a Supabase project and run the following SQL que
 ------------------------------------------------------------
 -- 0. TEAR DOWN (safe order)
 ------------------------------------------------------------
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user();
 DROP TABLE IF EXISTS public.workouts;
+DROP TABLE IF EXISTS public.profiles;
 
 ------------------------------------------------------------
--- 1. WORKOUTS TABLE (directly linked to auth.users)
+-- 1. PROFILES TABLE (Store Premium Status)
+------------------------------------------------------------
+CREATE TABLE public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  is_premium BOOLEAN DEFAULT FALSE,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own profile" ON public.profiles
+  FOR SELECT USING (auth.uid() = id);
+
+-- Only service role can update premium status (payment provider webhook)
+-- Users cannot update their own premium flag directly via API
+
+------------------------------------------------------------
+-- 2. WORKOUTS TABLE (directly linked to auth.users)
 ------------------------------------------------------------
 CREATE TABLE public.workouts (
   id TEXT PRIMARY KEY,
@@ -51,12 +71,12 @@ CREATE TABLE public.workouts (
 );
 
 ------------------------------------------------------------
--- 2. ENABLE ROW LEVEL SECURITY
+-- 3. ENABLE ROW LEVEL SECURITY
 ------------------------------------------------------------
 ALTER TABLE public.workouts ENABLE ROW LEVEL SECURITY;
 
 ------------------------------------------------------------
--- 3. RLS POLICIES
+-- 4. RLS POLICIES
 ------------------------------------------------------------
 
 -- Unified policy: users can only manage their own workouts
@@ -64,11 +84,27 @@ CREATE POLICY workouts_owner ON public.workouts
   FOR ALL
   USING (auth.uid() = owner_id)
   WITH CHECK (auth.uid() = owner_id);
-  
+
+------------------------------------------------------------
+-- 5. USER CREATION TRIGGER
+-- Automatically creates a profile when a user signs up
+------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id)
+  VALUES (new.id);
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
 ------------------------------------------------------------
 -- SECURE DELETE USER FUNCTION
 -- Safely deletes ONLY the currently authenticated user
--- and cascades all dependent data (e.g., workouts)
 ------------------------------------------------------------
 
 create or replace function public.delete_user()
@@ -87,23 +123,14 @@ begin
   end if;
 
   -- Delete the user from auth.users
-  -- ON DELETE CASCADE will remove dependent rows (e.g., workouts)
+  -- ON DELETE CASCADE will remove dependent rows (workouts, profiles)
   delete from auth.users
   where id = uid;
 
 end;
 $$;
 
-------------------------------------------------------------
--- IMPORTANT: Restrict function ownership
--- Prevents privilege escalation if the function is ever modified
-------------------------------------------------------------
 alter function public.delete_user() owner to authenticated;
-
-------------------------------------------------------------
--- OPTIONAL: Restrict who can execute the function
--- (By default, only authenticated users should be allowed)
-------------------------------------------------------------
 revoke all on function public.delete_user() from public;
 grant execute on function public.delete_user() to authenticated;
 ```

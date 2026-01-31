@@ -18,7 +18,8 @@ import { generateDemoData } from './utils/demoData';
 
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.6.0';
+const APP_VERSION = '2.7.0';
+const FREE_TIER_LIMIT = 2;
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type AppState = 'loading' | 'locked' | 'unlocked' | 'onboarding' | 'creatingPin' | 'confirmingPinForBio';
@@ -60,6 +61,7 @@ const App: React.FC = () => {
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   
   const [user, setUser] = useState<any>(null);
+  const [isPremium, setIsPremium] = useState(false); // New Premium Flag
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('unconfigured');
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
 
@@ -75,20 +77,50 @@ const App: React.FC = () => {
     localStorage.setItem('fit_active_exercises', JSON.stringify(activeExerciseIds));
   }, [activeExerciseIds]);
 
+  // Fetch Premium Status
+  const fetchProfile = useCallback(async (userId: string, client: SupabaseClient) => {
+    try {
+      const { data, error } = await client
+        .from('profiles')
+        .select('is_premium')
+        .eq('id', userId)
+        .single();
+      
+      if (data && !error) {
+        setIsPremium(data.is_premium);
+      }
+    } catch (e) {
+      console.warn("Could not fetch profile", e);
+    }
+  }, []);
+
   const toggleExercise = (id: ExerciseType) => {
     setActiveExerciseIds(prev => {
-      if (prev.includes(id)) {
+      const isRemoving = prev.includes(id);
+      
+      if (isRemoving) {
         if (prev.length <= 1) {
           showToast("Keep at least one exercise active");
           return prev;
         }
         return prev.filter(e => e !== id);
       }
+      
+      // Adding: Check Limit
+      if (!isPremium && prev.length >= FREE_TIER_LIMIT) {
+        showToast(`Free limit reached (${FREE_TIER_LIMIT} max)`);
+        return prev;
+      }
       return [...prev, id];
     });
   };
 
   const handleUpdateActiveExercises = (ids: ExerciseType[]) => {
+    if (!isPremium && ids.length > FREE_TIER_LIMIT) {
+      showToast(`Free plan limited to ${FREE_TIER_LIMIT} exercises`);
+      // Optional: Clamp to limit instead of rejecting? Rejecting is safer for bulk select.
+      return; 
+    }
     setActiveExerciseIds(ids);
   };
 
@@ -99,6 +131,10 @@ const App: React.FC = () => {
       let changed = false;
       incomingTypes.forEach(t => {
         if (!next.has(t) && EXERCISES.some(e => e.id === t)) {
+          // IMPORTANT: Even if importing logs, if user is not premium, we shouldn't visually 
+          // activate more than the limit in the UI toggle list, technically.
+          // However, for data integrity, if they have logs, they should probably see them.
+          // For now, we allow activation via LOGS (historical data), but prevent manual selection.
           next.add(t);
           changed = true;
         }
@@ -150,7 +186,11 @@ const App: React.FC = () => {
       if (await secureStore.isPinSet()) setAppState('locked');
       else {
         const { data: { session } } = await client.auth.getSession();
-        if (session?.user) { setUser(session.user); setAppState('unlocked'); }
+        if (session?.user) { 
+          setUser(session.user); 
+          fetchProfile(session.user.id, client);
+          setAppState('unlocked'); 
+        }
         else if (localStorage.getItem('fit_skip_auth') === 'true') setAppState('unlocked');
         else { setAppState('onboarding'); setOnboardingStep('welcome'); }
       }
@@ -160,7 +200,10 @@ const App: React.FC = () => {
     const { data: { subscription } } = client.auth.onAuthStateChange((_, s) => {
       setUser(s?.user ?? null);
       if (s?.user) {
+        fetchProfile(s.user.id, client);
         setAppState(prev => (prev === 'onboarding' ? 'unlocked' : prev));
+      } else {
+        setIsPremium(false); // Reset on logout
       }
     });
 
@@ -168,13 +211,16 @@ const App: React.FC = () => {
       subscription.unsubscribe();
       window.removeEventListener('show-toast', handleShowToast);
     };
-  }, [triggerToast]);
+  }, [triggerToast, fetchProfile]);
 
   const syncWithCloud = async (skip = false): Promise<SyncResult> => {
     if (!supabase || !user) return 'error';
     if (!navigator.onLine) { setSyncStatus('offline'); return 'offline'; }
     setSyncStatus('syncing');
     try {
+      // Re-fetch profile on sync to ensure premium status is up to date
+      await fetchProfile(user.id, supabase);
+
       const { data: cloudLogs, error } = await supabase.from('workouts').select('*');
       if (error) throw error;
       if (!skip && (!cloudLogs || cloudLogs.length === 0) && logsRef.current.length > 0) {
@@ -305,6 +351,7 @@ const App: React.FC = () => {
       await secureStore.removeSession();
       localStorage.removeItem('fit_skip_auth');
       setUser(null); setAppState('onboarding'); setOnboardingStep('welcome');
+      setIsPremium(false);
     } finally { setIsLoggingOut(false); setLogoutConfirm(false); }
   };
 
@@ -377,10 +424,6 @@ const App: React.FC = () => {
         // Detect units from header
         const header = lines[0].toLowerCase();
         const isImperialWeight = header.includes('(lbs)');
-        // Distance is harder to detect from generic CSV "Reps/Dist", assuming generic imports 
-        // match the weight preference or are explicit. 
-        // Safe assumption: If header specifies lbs, the user exported it as imperial, 
-        // so generic distance rows likely imply miles.
         const isImperialContext = isImperialWeight; 
 
         lines.forEach((line, i) => {
@@ -419,7 +462,10 @@ const App: React.FC = () => {
   const handleGenerateDemoData = () => {
     if (logs.length > 0) return;
     
-    const demoLogs = generateDemoData();
+    // Pass limit to generator if not premium
+    const limit = isPremium ? undefined : FREE_TIER_LIMIT;
+    const demoLogs = generateDemoData(limit);
+    
     // Assign owner_id if user is logged in
     if (user) {
       demoLogs.forEach(l => l.owner_id = user.id);
@@ -499,14 +545,14 @@ const App: React.FC = () => {
   return (
     <>
       {showExerciseManager ? (
-        <ExerciseManager activeIds={activeExerciseIds} onToggle={toggleExercise} onUpdate={handleUpdateActiveExercises} onClose={() => setShowExerciseManager(false)} />
+        <ExerciseManager activeIds={activeExerciseIds} onToggle={toggleExercise} onUpdate={handleUpdateActiveExercises} onClose={() => setShowExerciseManager(false)} isPremium={isPremium} />
       ) : viewingHistory ? (
         <HistoryView unitSystem={unitSystem} viewingHistory={viewingHistory} onClose={() => setViewingHistory(null)} totalsTimeFrame="weekly" historyLogs={historyLogs} onDeleteLog={setLogToDelete} />
       ) : (
         <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={() => syncWithCloud()}>
           {activeTab === 'dashboard' && <DashboardView unitSystem={unitSystem} logs={logs} activeExercises={activeExercises} maxStats={maxStats} setViewingHistory={setViewingHistory} />}
           {activeTab === 'add' && <AddLogView unitSystem={unitSystem} activeExercises={activeExercises} newEntry={newEntry} setNewEntry={setNewEntry} entryDate={entryDate} handleDateChange={e => setEntryDate(new Date(e.target.value))} handleAddLog={handleAddLog} />}
-          {activeTab === 'settings' && <SettingsView unitSystem={unitSystem} onUnitSystemChange={setUnitSystem} user={user} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={handleSecurityToggle} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onManageExercises={() => setShowExerciseManager(true)} onAuthAction={() => { if (user) { if (logoutConfirm) handleLogout(); else setLogoutConfirm(true); } else { setAppState('onboarding'); setOnboardingStep('email'); } }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} hasLocalData={logs.length > 0} onGenerateDemoData={handleGenerateDemoData} />}
+          {activeTab === 'settings' && <SettingsView unitSystem={unitSystem} onUnitSystemChange={setUnitSystem} user={user} isPremium={isPremium} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={handleSecurityToggle} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onManageExercises={() => setShowExerciseManager(true)} onAuthAction={() => { if (user) { if (logoutConfirm) handleLogout(); else setLogoutConfirm(true); } else { setAppState('onboarding'); setOnboardingStep('email'); } }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} hasLocalData={logs.length > 0} onGenerateDemoData={handleGenerateDemoData} />}
         </Layout>
       )}
       <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" />
