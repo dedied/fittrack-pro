@@ -31,17 +31,18 @@ FitTrack Pro uses an **Offline-First** approach with a "Cloud-Wins" conflict res
 To enable cloud syncing, set up a Supabase project and run the following SQL query in the **SQL Editor** to create the necessary tables and security policies.
 
 ```sql
-------------------------------------------------------------
--- 0. TEAR DOWN (safe order)
-------------------------------------------------------------
+-- ================================
+-- Secure migration script (public)
+-- Run as DB owner / service_role
+-- ================================
+
+-- 0. TEAR DOWN
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 DROP FUNCTION IF EXISTS public.handle_new_user();
 DROP TABLE IF EXISTS public.workouts;
 DROP TABLE IF EXISTS public.profiles;
 
-------------------------------------------------------------
--- 1. PROFILES TABLE (Store Premium Status)
-------------------------------------------------------------
+-- 1. PROFILES TABLE
 CREATE TABLE public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   is_premium BOOLEAN DEFAULT FALSE,
@@ -50,89 +51,152 @@ CREATE TABLE public.profiles (
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own profile" ON public.profiles
-  FOR SELECT USING (auth.uid() = id);
+-- SELECT own profile
+CREATE POLICY profiles_select_own
+  ON public.profiles
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() = id);
 
--- Only service role can update premium status (payment provider webhook)
--- Users cannot update their own premium flag directly via API
+-- INSERT own profile
+CREATE POLICY profiles_insert_own
+  ON public.profiles
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = id);
 
-------------------------------------------------------------
--- 2. WORKOUTS TABLE (directly linked to auth.users)
-------------------------------------------------------------
+-- UPDATE own profile (but NOT is_premium)
+CREATE POLICY profiles_update_own
+  ON public.profiles
+  FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (
+    auth.uid() = id
+    AND is_premium = (SELECT is_premium FROM public.profiles WHERE id = auth.uid())
+  );
+
+-- Prevent DELETE by authenticated users
+CREATE POLICY profiles_no_delete_for_users
+  ON public.profiles
+  FOR DELETE
+  TO authenticated
+  USING (false);
+
+-- 2. WORKOUTS TABLE
 CREATE TABLE public.workouts (
   id TEXT PRIMARY KEY,
   date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   type TEXT NOT NULL,
-  -- We use FLOAT for reps to support distance-based exercises (e.g., 5.5 km)
-  reps FLOAT NOT NULL,
-  weight FLOAT,
-  owner_id UUID NOT NULL
-    REFERENCES auth.users(id) ON DELETE CASCADE
+  reps DOUBLE PRECISION NOT NULL,
+  weight DOUBLE PRECISION,
+  owner_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-------------------------------------------------------------
--- 3. ENABLE ROW LEVEL SECURITY
-------------------------------------------------------------
 ALTER TABLE public.workouts ENABLE ROW LEVEL SECURITY;
 
-------------------------------------------------------------
--- 4. RLS POLICIES
-------------------------------------------------------------
+-- SELECT own workouts
+CREATE POLICY workouts_select_owner
+  ON public.workouts
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() = owner_id);
 
--- Unified policy: users can only manage their own workouts
-CREATE POLICY workouts_owner ON public.workouts
-  FOR ALL
+-- INSERT own workouts
+CREATE POLICY workouts_insert_owner
+  ON public.workouts
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = owner_id);
+
+-- UPDATE own workouts
+CREATE POLICY workouts_update_owner
+  ON public.workouts
+  FOR UPDATE
+  TO authenticated
   USING (auth.uid() = owner_id)
   WITH CHECK (auth.uid() = owner_id);
 
-------------------------------------------------------------
--- 5. USER CREATION TRIGGER
--- Automatically creates a profile when a user signs up
-------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+-- DELETE own workouts
+CREATE POLICY workouts_delete_owner
+  ON public.workouts
+  FOR DELETE
+  TO authenticated
+  USING (auth.uid() = owner_id);
+
+-- Auto-update updated_at
+CREATE OR REPLACE FUNCTION public.update_timestamp()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $function$
 BEGIN
-  INSERT INTO public.profiles (id)
-  VALUES (new.id);
-  RETURN new;
+  NEW.updated_at = NOW();
+  RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$function$;
+
+CREATE TRIGGER workouts_set_updated_at
+  BEFORE UPDATE ON public.workouts
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_timestamp();
+
+-- 3. USER CREATION TRIGGER
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $function$
+BEGIN
+  INSERT INTO public.profiles (id, is_premium, updated_at)
+  VALUES (NEW.id, FALSE, NOW())
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$function$;
 
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+  FOR EACH ROW
+  EXECUTE PROCEDURE public.handle_new_user();
 
-------------------------------------------------------------
--- SECURE DELETE USER FUNCTION
--- Safely deletes ONLY the currently authenticated user
-------------------------------------------------------------
-
-create or replace function public.delete_user()
-returns void
-language plpgsql
-security definer
-set search_path = public, auth, extensions
-as $$
-declare
+-- 4. SECURE DELETE USER FUNCTION
+CREATE OR REPLACE FUNCTION public.delete_user()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, extensions
+AS $function$
+DECLARE
   uid uuid;
-begin
-  -- Ensure the caller is authenticated
+BEGIN
   uid := auth.uid();
-  if uid is null then
-    raise exception 'Not authenticated';
-  end if;
+  IF uid IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
 
-  -- Delete the user from auth.users
-  -- ON DELETE CASCADE will remove dependent rows (workouts, profiles)
-  delete from auth.users
-  where id = uid;
+  DELETE FROM auth.users WHERE id = uid;
+END;
+$function$;
 
-end;
-$$;
+REVOKE ALL ON FUNCTION public.delete_user() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.delete_user() TO authenticated;
 
-alter function public.delete_user() owner to authenticated;
-revoke all on function public.delete_user() from public;
-grant execute on function public.delete_user() to authenticated;
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC;
+
+-- 5. INDEXES
+CREATE INDEX IF NOT EXISTS idx_workouts_owner_id ON public.workouts (owner_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_id ON public.profiles (id);
+
+-- 6. PRIVILEGE HARDENING
+REVOKE ALL ON TABLE public.workouts FROM PUBLIC;
+REVOKE ALL ON TABLE public.profiles FROM PUBLIC;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.workouts TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
+
 ```
 
 ## 🤖 Created with Google AI Studio, GitHub, GitHub Pages and Supabase

@@ -14,7 +14,7 @@ interface ProgressChartProps {
   unitSystem: UnitSystem;
 }
 
-type RangeOption = '1M' | '3M' | '1Y' | 'ALL';
+type RangeOption = 'W' | 'M' | 'Y' | 'ALL';
 type ChartMode = 'performance' | 'volume';
 
 const ProgressChart: React.FC<ProgressChartProps> = ({ logs, activeExercises, onRangeChange, unitSystem }) => {
@@ -25,7 +25,7 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs, activeExercises, on
   );
   
   const [activeSeries, setActiveSeries] = useState<string[]>([]);
-  const [rangeOption, setRangeOption] = useState<RangeOption>('1M');
+  const [rangeOption, setRangeOption] = useState<RangeOption>('M');
   
   const [brushRange, setBrushRange] = useState<{startIndex: number, endIndex: number} | null>(null);
   const lastEmittedRange = useRef<{start: number, end: number} | null>(null);
@@ -121,9 +121,9 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs, activeExercises, on
     let startIdx = 0;
     
     // Calculate days based on option
-    if (option === '1M') startIdx = Math.max(0, endIdx - 30);
-    else if (option === '3M') startIdx = Math.max(0, endIdx - 90);
-    else if (option === '1Y') startIdx = Math.max(0, endIdx - 365);
+    if (option === 'W') startIdx = Math.max(0, endIdx - 6); // Last 7 days
+    else if (option === 'M') startIdx = Math.max(0, endIdx - 30);
+    else if (option === 'Y') startIdx = Math.max(0, endIdx - 365);
     else startIdx = 0; // ALL
     
     setBrushRange({ startIndex: startIdx, endIndex: endIdx });
@@ -133,7 +133,7 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs, activeExercises, on
   useEffect(() => {
     if (chartData.length > 0) {
         if (!brushRange || brushRange.endIndex >= chartData.length) {
-            applyRangeFilter('1M');
+            applyRangeFilter('M');
         }
     }
   }, [chartData.length, applyRangeFilter]);
@@ -241,7 +241,7 @@ const ProgressChart: React.FC<ProgressChartProps> = ({ logs, activeExercises, on
          <div className="flex justify-between items-center border-t border-slate-50 pt-4">
             <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest pl-2">Range</span>
             <div className="flex gap-1">
-                {(['1M', '3M', '1Y', 'ALL'] as RangeOption[]).map(opt => (
+                {(['W', 'M', 'Y', 'ALL'] as RangeOption[]).map(opt => (
                     <button
                         key={opt}
                         onClick={() => applyRangeFilter(opt)}

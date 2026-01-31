@@ -121,7 +121,7 @@ const PwaInstallButton: React.FC = () => {
       </div>
       <div className="flex-1">
         <p className="font-black text-xl text-slate-800 leading-tight">{isInstalled ? "Successfully Installed" : "Enable Native App"}</p>
-        <p className="text-[11px] font-bold uppercase text-slate-400 tracking-widest mt-1">{isInstalled ? "Ready for offline training" : "Add to home screen for best experience"}</p>
+        <p className="text-[11px] font-bold uppercase text-slate-400 tracking-widest mt-1">{isInstalled ? "" : "Add to home screen for best experience"}</p>
       </div>
 
       {/* Reset Pill Button - Only show if installed via flag but NOT currently running standalone */}

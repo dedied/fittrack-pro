@@ -65,8 +65,8 @@ const AppDialogs: React.FC<AppDialogsProps> = ({
             <h2 className="text-xl font-black text-slate-800">Are you sure?</h2>
             <p className="text-slate-500 mt-2 text-sm">
               {isCloudEnabled 
-                ? "Delete all logs from this device and the cloud?" 
-                : "Delete all logs from this device?"}
+                ? "Delete all workout entries from this device and the cloud?" 
+                : "Delete all workout entries from this device?"}
             </p>
             <div className="mt-6 flex gap-3">
               <button onClick={onClearDataCancel} className="flex-1 bg-slate-100 py-3 rounded-xl font-bold">Cancel</button>

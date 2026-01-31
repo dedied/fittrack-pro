@@ -133,17 +133,27 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                 </button>
               )}
 
-              <button onClick={onImportClick} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+              <button 
+                  onClick={isPremium ? onImportClick : undefined} 
+                  disabled={!isPremium}
+                  className={`w-full p-6 flex items-center gap-4 transition-colors ${isPremium ? 'hover:bg-slate-50' : 'opacity-50 cursor-not-allowed bg-slate-50/50'}`}
+              >
                   <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-xl">📥</div>
-                  <div className="text-left flex-1 font-bold text-slate-700">Restore from CSV</div>
+                  <div className="text-left flex-1">
+                      <p className="font-bold text-slate-700">Restore from CSV</p>
+                      {!isPremium && <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider bg-amber-100 px-2 py-0.5 rounded-full inline-block mt-1">Premium Only</span>}
+                  </div>
               </button>
               <button 
-                onClick={onExportCSV} 
-                disabled={!hasLocalData}
-                className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 transition-colors disabled:opacity-30 disabled:hover:bg-white"
+                onClick={isPremium ? onExportCSV : undefined} 
+                disabled={!isPremium || !hasLocalData}
+                className={`w-full p-6 flex items-center gap-4 transition-colors ${isPremium && hasLocalData ? 'hover:bg-slate-50' : 'opacity-50 cursor-not-allowed bg-slate-50/50'}`}
               >
                   <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-xl">📤</div>
-                  <div className="text-left flex-1 font-bold text-slate-700">Export All Activity</div>
+                  <div className="text-left flex-1">
+                      <p className="font-bold text-slate-700">Export All Activity</p>
+                      {!isPremium && <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider bg-amber-100 px-2 py-0.5 rounded-full inline-block mt-1">Premium Only</span>}
+                  </div>
               </button>
               <button 
                 onClick={onClearDataTrigger} 

@@ -134,7 +134,7 @@ const App: React.FC = () => {
           // IMPORTANT: Even if importing logs, if user is not premium, we shouldn't visually 
           // activate more than the limit in the UI toggle list, technically.
           // However, for data integrity, if they have logs, they should probably see them.
-          // For now, we allow activation via LOGS (historical data), but prevent manual selection.
+          // For now, we allow activation via logs, but prevent manual selection.
           next.add(t);
           changed = true;
         }
@@ -472,7 +472,16 @@ const App: React.FC = () => {
     }
     
     setLogs(demoLogs);
-    activateExercisesFromLogs(demoLogs);
+    
+    // UPDATE: If not premium, forcefully reset active exercises to match the generated data exactly
+    // ensuring we don't exceed the limit by adding to existing selections.
+    if (!isPremium) {
+       const newTypes = Array.from(new Set(demoLogs.map(l => l.type)));
+       setActiveExerciseIds(newTypes);
+    } else {
+       activateExercisesFromLogs(demoLogs);
+    }
+    
     showToast(`Generated ${demoLogs.length} demo entries!`);
     
     if (user && supabase && navigator.onLine) {
@@ -556,7 +565,33 @@ const App: React.FC = () => {
         </Layout>
       )}
       <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" />
-      <AppDialogs isCloudEnabled={!!user} syncError={syncError} showSyncErrorDialog={showSyncErrorDialog} onSyncErrorClose={() => setShowSyncErrorDialog(false)} onSyncRetry={() => syncWithCloud()} showCloudWipeDialog={showCloudWipeDialog} onCloudKeepLocal={() => { setShowCloudWipeDialog(false); syncWithCloud(true); showToast("Uploading local data..."); }} onCloudOverwriteLocal={() => { setLogs([]); setShowCloudWipeDialog(false); }} showClearDataConfirm={showClearDataConfirm} onClearDataCancel={() => setShowClearDataConfirm(false)} onClearDataConfirm={async () => { if (user && supabase && navigator.onLine) { try { await supabase.from('workouts').delete().eq('owner_id', user.id); } catch { showToast("Error clearing cloud"); setShowClearDataConfirm(false); return; } } setLogs([]); setShowClearDataConfirm(false); showToast("All data deleted."); }} logToDelete={logToDelete} onDeleteLogCancel={() => setLogToDelete(null)} onDeleteLogConfirm={() => { setLogs(prev => prev.filter(l => l.id !== logToDelete)); setLogToDelete(null); }} showDeleteAccountConfirm={showDeleteAccountConfirm} onDeleteAccountCancel={() => setShowDeleteAccountConfirm(false)} onDeleteAccountConfirm={handleDeleteAccount} showPrivacyDialog={showPrivacyDialog} onPrivacyClose={() => setShowPrivacyDialog(false)} />
+      <AppDialogs isCloudEnabled={!!user} syncError={syncError} showSyncErrorDialog={showSyncErrorDialog} onSyncErrorClose={() => setShowSyncErrorDialog(false)} onSyncRetry={() => syncWithCloud()} showCloudWipeDialog={showCloudWipeDialog} onCloudKeepLocal={() => { setShowCloudWipeDialog(false); syncWithCloud(true); showToast("Uploading local data..."); }} onCloudOverwriteLocal={() => { setLogs([]); setShowCloudWipeDialog(false); }} showClearDataConfirm={showClearDataConfirm} onClearDataCancel={() => setShowClearDataConfirm(false)} 
+      onClearDataConfirm={async () => { 
+        if (user && supabase && navigator.onLine) { 
+          try { 
+            // CONSTRAINT: Only delete workouts. Do not touch profile or auth user.
+            await supabase.from('workouts').delete().eq('owner_id', user.id); 
+          } catch { 
+            showToast("Error clearing cloud"); 
+            setShowClearDataConfirm(false); 
+            return; 
+          } 
+        } 
+        setLogs([]); 
+        setShowClearDataConfirm(false); 
+        showToast("All data deleted."); 
+      }} 
+      logToDelete={logToDelete} 
+      onDeleteLogCancel={() => setLogToDelete(null)} 
+      onDeleteLogConfirm={async () => { 
+        // Added cloud delete sync for single log removal
+        if (user && supabase && navigator.onLine && logToDelete) {
+           await supabase.from('workouts').delete().eq('id', logToDelete);
+        }
+        setLogs(prev => prev.filter(l => l.id !== logToDelete)); 
+        setLogToDelete(null); 
+      }} 
+      showDeleteAccountConfirm={showDeleteAccountConfirm} onDeleteAccountCancel={() => setShowDeleteAccountConfirm(false)} onDeleteAccountConfirm={handleDeleteAccount} showPrivacyDialog={showPrivacyDialog} onPrivacyClose={() => setShowPrivacyDialog(false)} />
       {toastMessage && <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold toast-animate text-white bg-slate-900 border border-slate-700/50 backdrop-blur-md">{toastMessage}</div>}
     </>
   );
