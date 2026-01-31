@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { EXERCISES, ExerciseType } from '../types';
+import { EXERCISES, ExerciseType, FREE_TIER_LIMIT } from '../types';
 
 interface ExerciseManagerProps {
   activeIds: ExerciseType[];
@@ -13,8 +13,6 @@ interface ExerciseManagerProps {
 const ExerciseManager: React.FC<ExerciseManagerProps> = ({ activeIds, onToggle, onUpdate, onClose, isPremium }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | string>('ALL');
-
-  const FREE_LIMIT = 2;
 
   // Derive unique categories for filter tabs based on the new 'categories' array
   const categories = useMemo(() => {
@@ -43,7 +41,7 @@ const ExerciseManager: React.FC<ExerciseManagerProps> = ({ activeIds, onToggle, 
     });
   }, [searchTerm, filter, activeIds]);
 
-  const limitReached = !isPremium && activeIds.length >= FREE_LIMIT;
+  const limitReached = !isPremium && activeIds.length >= FREE_TIER_LIMIT;
 
   return (
     <div className="fixed inset-0 bg-slate-50 z-50 flex flex-col">
@@ -59,7 +57,7 @@ const ExerciseManager: React.FC<ExerciseManagerProps> = ({ activeIds, onToggle, 
           <h1 className="text-xl font-black text-slate-800 tracking-tight">Manage Exercises</h1>
           <div className="flex items-center gap-2">
              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                {activeIds.length} Active {(!isPremium && ` / ${FREE_LIMIT} (Free)`) }
+                {activeIds.length} Active {(!isPremium && ` / ${FREE_TIER_LIMIT} (Free)`) }
              </p>
              {!isPremium && limitReached && (
                  <span className="bg-amber-100 text-amber-600 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">Limit Reached</span>

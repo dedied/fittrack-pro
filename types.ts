@@ -4,6 +4,9 @@ import React from 'react';
 export type ExerciseType = string;
 export type UnitSystem = 'metric' | 'imperial';
 
+// CONFIGURATION
+export const FREE_TIER_LIMIT = 3;
+
 export interface WorkoutLog {
   id: string;
   date: string; // ISO string

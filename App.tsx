@@ -9,7 +9,7 @@ import HistoryView from './components/HistoryView';
 import ExerciseManager from './components/ExerciseManager';
 import AppDialogs from './components/AppDialogs';
 import PinLockScreen from './components/PinLockScreen';
-import { WorkoutLog, EXERCISES, ExerciseType, DEFAULT_EXERCISES, UnitSystem } from './types';
+import { WorkoutLog, EXERCISES, ExerciseType, DEFAULT_EXERCISES, UnitSystem, FREE_TIER_LIMIT } from './types';
 import { secureStore } from './utils/secureStore';
 import { generateId } from './utils/dateUtils';
 import { showToast } from './utils/toast';
@@ -19,7 +19,6 @@ import { generateDemoData } from './utils/demoData';
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
 const APP_VERSION = '2.7.0';
-const FREE_TIER_LIMIT = 2;
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type AppState = 'loading' | 'locked' | 'unlocked' | 'onboarding' | 'creatingPin' | 'confirmingPinForBio';
