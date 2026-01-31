@@ -1,9 +1,10 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { showToast } from '../utils/toast';
 
 export type TabType = 'dashboard' | 'add' | 'settings' | 'auth';
 
-export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'unconfigured' | 'error';
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'unconfigured' | 'error' | 'premium_required';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,11 +12,12 @@ interface LayoutProps {
   setActiveTab: (tab: TabType) => void;
   syncStatus?: SyncStatus;
   onSyncClick?: () => void;
+  onUpgradeClick?: () => void;
 }
 
 const REFRESH_THRESHOLD = 80;
 
-const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, syncStatus = 'unconfigured', onSyncClick }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, syncStatus = 'unconfigured', onSyncClick, onUpgradeClick }) => {
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const scrollRef = useRef<HTMLElement>(null);
@@ -75,6 +77,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
     if ('vibrate' in navigator) navigator.vibrate(50);
     setTimeout(() => { window.location.reload(); }, 600);
   };
+  
+  const handleSyncIconClick = () => {
+    if (syncStatus === 'premium_required' && onUpgradeClick) {
+        onUpgradeClick();
+    } else if (onSyncClick) {
+        onSyncClick();
+    }
+  };
 
   const renderSyncIcon = () => {
     switch (syncStatus) {
@@ -82,6 +92,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
       case 'synced': return <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" title="All data synced" />;
       case 'error': return <div className="w-2.5 h-2.5 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.5)]" title="Sync Error" />;
       case 'offline': return <div className="w-2.5 h-2.5 bg-slate-300 rounded-full" title="Offline" />;
+      case 'premium_required': return <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.5)]" title="Upgrade to enable sync" />;
       case 'unconfigured': return <div className="w-2.5 h-2.5 bg-slate-200 rounded-full border border-slate-300" title="Not signed in" />;
       default: return null;
     }
@@ -93,6 +104,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
       case 'syncing': return 'Syncing...';
       case 'offline': return 'Offline';
       case 'error': return 'Error';
+      case 'premium_required': return 'Upgrade to Sync';
       case 'unconfigured': return 'Not signed in';
       default: return syncStatus;
     }
@@ -104,7 +116,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
     { id: 'settings', label: 'Settings', icon: (props: any) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg> }
   ];
 
-  // Fixed: Assign icon components to capitalized variables for JSX rendering
   const DashboardIcon = navItems[0].icon;
   const AddIcon = navItems[1].icon;
   const SettingsIcon = navItems[2].icon;
@@ -112,11 +123,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
   return (
     <div className="flex w-full bg-slate-50 overflow-hidden relative" style={{ height: viewportHeight }}>
       
-      {/* Desktop Sidebar Navigation */}
       <aside className="hidden md:flex flex-col w-72 bg-white border-r border-slate-200 p-6 z-40">
         <div className="mb-10 flex items-center justify-between">
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">FitTrack Pro</h1>
-          <button onClick={onSyncClick} className="p-2 transition-opacity hover:opacity-70">
+          <button onClick={handleSyncIconClick} className="p-2 transition-opacity hover:opacity-70">
             {renderSyncIcon()}
           </button>
         </div>
@@ -140,22 +150,20 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
 
         <div className="mt-auto p-4 bg-slate-50 rounded-2xl border border-slate-100">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 text-center">Cloud Sync</p>
-          <div className="flex items-center justify-center gap-2">
+          <button onClick={handleSyncIconClick} className="flex items-center justify-center gap-2 w-full">
             {renderSyncIcon()}
             <span className="text-xs font-bold text-slate-600">{getSyncLabel()}</span>
-          </div>
+          </button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         
-        {/* Mobile Top Header (hidden on desktop sidebar view) */}
         <header className="md:hidden bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0 z-30 shadow-sm flex items-center justify-between">
           <div className="w-8" />
           <h1 className="text-xl font-black text-slate-800 tracking-tight">FitTrack Pro</h1>
           <div className="w-8 flex justify-end items-center">
-            <button onClick={onSyncClick} className="p-2 -mr-2 active:opacity-50 transition-opacity">
+            <button onClick={handleSyncIconClick} className="p-2 -mr-2 active:opacity-50 transition-opacity">
               {renderSyncIcon()}
             </button>
           </div>
@@ -192,7 +200,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, sync
           </div>
         </main>
 
-        {/* Mobile Bottom Tab Bar */}
         <nav className="md:hidden flex-shrink-0 bg-white border-t border-slate-200 w-full z-40 pb-safe shadow-2xl">
           <div className="max-w-lg mx-auto flex h-20 items-center px-4 relative">
             <div className="flex-1 flex justify-center">
