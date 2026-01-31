@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4';
 import Layout, { TabType, SyncStatus } from './components/Layout';
@@ -5,17 +6,19 @@ import DashboardView from './components/DashboardView';
 import AddLogView from './components/AddLogView';
 import SettingsView from './components/SettingsView';
 import HistoryView from './components/HistoryView';
+import ExerciseManager from './components/ExerciseManager';
 import AppDialogs from './components/AppDialogs';
 import PinLockScreen from './components/PinLockScreen';
-import { WorkoutLog, EXERCISES, ExerciseType } from './types';
+import { WorkoutLog, EXERCISES, ExerciseType, DEFAULT_EXERCISES, UnitSystem } from './types';
 import { secureStore } from './utils/secureStore';
 import { generateId } from './utils/dateUtils';
 import { showToast } from './utils/toast';
+import { toStorageWeight, toStorageDistance, toDisplayWeight, toDisplayDistance, getWeightUnit, getDistanceUnit, isDistanceExercise } from './utils/units';
+import { generateDemoData } from './utils/demoData';
 
 const SUPABASE_URL = 'https://infdrucgfquyujuqtajr.supabase.co/';
 const SUPABASE_ANON_KEY = 'sb_publishable_1dq2GSISKJheR-H149eEvg_uU_EuISF';
-const APP_VERSION = '2.4.8';
-const MAX_PIN_ATTEMPTS = 5;
+const APP_VERSION = '2.6.0';
 
 export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type AppState = 'loading' | 'locked' | 'unlocked' | 'onboarding' | 'creatingPin' | 'confirmingPinForBio';
@@ -24,7 +27,6 @@ type SyncResult = 'success' | 'error' | 'offline' | 'conflict_cloud_empty';
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('loading');
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-  const [totalsTimeFrame, setTotalsTimeFrame] = useState<TimeFrame>(() => (localStorage.getItem('fit_totals_timeframe') as TimeFrame) || 'weekly');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
   const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
@@ -34,7 +36,17 @@ const App: React.FC = () => {
   const [showSyncErrorDialog, setShowSyncErrorDialog] = useState(false);
   const [showCloudWipeDialog, setShowCloudWipeDialog] = useState(false);
   const [viewingHistory, setViewingHistory] = useState<ExerciseType | null>(null);
+  const [showExerciseManager, setShowExerciseManager] = useState(false);
   
+  // Unit System State
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>(() => 
+    (localStorage.getItem('fit_unit_system') as UnitSystem) || 'metric'
+  );
+
+  useEffect(() => {
+    localStorage.setItem('fit_unit_system', unitSystem);
+  }, [unitSystem]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [hasBiometrics, setHasBiometrics] = useState(false);
@@ -51,6 +63,50 @@ const App: React.FC = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('unconfigured');
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
 
+  // Active Exercises State
+  const [activeExerciseIds, setActiveExerciseIds] = useState<ExerciseType[]>(() => {
+    try {
+      const saved = localStorage.getItem('fit_active_exercises');
+      return saved ? JSON.parse(saved) : DEFAULT_EXERCISES;
+    } catch { return DEFAULT_EXERCISES; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('fit_active_exercises', JSON.stringify(activeExerciseIds));
+  }, [activeExerciseIds]);
+
+  const toggleExercise = (id: ExerciseType) => {
+    setActiveExerciseIds(prev => {
+      if (prev.includes(id)) {
+        if (prev.length <= 1) {
+          showToast("Keep at least one exercise active");
+          return prev;
+        }
+        return prev.filter(e => e !== id);
+      }
+      return [...prev, id];
+    });
+  };
+
+  const handleUpdateActiveExercises = (ids: ExerciseType[]) => {
+    setActiveExerciseIds(ids);
+  };
+
+  const activateExercisesFromLogs = useCallback((incomingLogs: WorkoutLog[]) => {
+    const incomingTypes = new Set(incomingLogs.map(l => l.type));
+    setActiveExerciseIds(prev => {
+      const next = new Set(prev);
+      let changed = false;
+      incomingTypes.forEach(t => {
+        if (!next.has(t) && EXERCISES.some(e => e.id === t)) {
+          next.add(t);
+          changed = true;
+        }
+      });
+      return changed ? Array.from(next) : prev;
+    });
+  }, []);
+
   const [logs, setLogs] = useState<WorkoutLog[]>(() => {
     try {
       const saved = localStorage.getItem('fit_logs');
@@ -64,7 +120,6 @@ const App: React.FC = () => {
   
   const toastTimeoutRef = useRef<any>(null);
 
-  useEffect(() => { localStorage.setItem('fit_totals_timeframe', totalsTimeFrame); }, [totalsTimeFrame]);
   useEffect(() => { localStorage.setItem('fit_logs', JSON.stringify(logs)); }, [logs]);
 
   const updateHasBio = async () => {
@@ -79,7 +134,6 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Listen for the global toast event
     const handleShowToast = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail.message) {
@@ -126,15 +180,22 @@ const App: React.FC = () => {
       if (!skip && (!cloudLogs || cloudLogs.length === 0) && logsRef.current.length > 0) {
         setSyncStatus('synced'); setShowCloudWipeDialog(true); return 'conflict_cloud_empty';
       }
+      
       const cloudMap = new Map(cloudLogs?.map(l => [l.id, l]));
       const toUpload = logsRef.current.filter(l => !cloudMap.has(l.id) || !l.owner_id).map(l => ({ ...l, owner_id: user.id }));
       if (toUpload.length > 0) { const { error: e } = await supabase.from('workouts').upsert(toUpload); if (e) throw e; }
+      
       setLogs(prev => {
         const map = new Map();
         cloudLogs?.forEach(cl => map.set(cl.id, cl));
         prev.forEach(pl => { if (!map.has(pl.id)) map.set(pl.id, { ...pl, owner_id: user.id }); });
         return Array.from(map.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       });
+
+      if (cloudLogs && cloudLogs.length > 0) {
+        activateExercisesFromLogs(cloudLogs);
+      }
+
       setSyncStatus('synced'); return 'success';
     } catch (err: any) { setSyncStatus('error'); setSyncError(err.message); return 'error'; }
   };
@@ -207,9 +268,30 @@ const App: React.FC = () => {
 
   const handleAddLog = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const reps = parseInt(newEntry.reps);
+    let reps = parseFloat(newEntry.reps);
+    let weight = newEntry.weight ? parseFloat(newEntry.weight) : undefined;
+    
     if (!reps || reps <= 0) return;
-    const log: WorkoutLog = { id: generateId(), date: entryDate.toISOString(), type: newEntry.type, reps, weight: newEntry.weight ? parseFloat(newEntry.weight) : undefined, owner_id: user?.id };
+
+    // CONVERT INPUT TO STORAGE (METRIC)
+    if (unitSystem === 'imperial') {
+      if (newEntry.weight && weight) {
+        weight = toStorageWeight(weight);
+      }
+      if (isDistanceExercise(newEntry.type)) {
+        reps = toStorageDistance(reps);
+      }
+    }
+
+    const log: WorkoutLog = { 
+      id: generateId(), 
+      date: entryDate.toISOString(), 
+      type: newEntry.type, 
+      reps, 
+      weight: weight, 
+      owner_id: user?.id 
+    };
+
     setLogs(prev => [log, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     showToast("✓ Saved!");
     setNewEntry(prev => ({ ...prev, reps: '' }));
@@ -244,13 +326,39 @@ const App: React.FC = () => {
 
   const handleExportCSV = () => {
     if (logs.length === 0) { showToast("No data to export"); return; }
-    const headers = ["Date", "Type", "Reps", "Weight (kg)"];
-    const rows = logs.map(log => [new Date(log.date).toISOString(), log.type, log.reps, log.weight || '']);
+    
+    // Dynamic headers based on unit system
+    const wUnit = getWeightUnit(unitSystem);
+    // Note: Reps header is generic, but values will be converted if distance
+    const headers = ["Date", "Type", "Reps/Dist", `Weight (${wUnit})`];
+    
+    const rows = logs.map(log => {
+      // CONVERT STORAGE (METRIC) TO EXPORT (DISPLAY)
+      let displayReps = log.reps;
+      let displayWeight = log.weight;
+
+      if (unitSystem === 'imperial') {
+         if (isDistanceExercise(log.type)) {
+           displayReps = toDisplayDistance(log.reps, 'imperial');
+         }
+         if (log.weight) {
+           displayWeight = toDisplayWeight(log.weight, 'imperial');
+         }
+      }
+
+      return [
+        new Date(log.date).toISOString(), 
+        log.type, 
+        displayReps, 
+        displayWeight || ''
+      ];
+    });
+
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `fittrack_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute("download", `fittrack_${unitSystem}_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -265,19 +373,65 @@ const App: React.FC = () => {
         const text = event.target?.result as string;
         const newLogs: WorkoutLog[] = [];
         const lines = text.split('\n');
+        
+        // Detect units from header
+        const header = lines[0].toLowerCase();
+        const isImperialWeight = header.includes('(lbs)');
+        // Distance is harder to detect from generic CSV "Reps/Dist", assuming generic imports 
+        // match the weight preference or are explicit. 
+        // Safe assumption: If header specifies lbs, the user exported it as imperial, 
+        // so generic distance rows likely imply miles.
+        const isImperialContext = isImperialWeight; 
+
         lines.forEach((line, i) => {
           if (i === 0 || !line.trim()) return;
           const [d, t, r, w] = line.split(',').map(s => s.trim().replace(/"/g, ''));
+          
           if (d && t && r) {
-            newLogs.push({ id: generateId(), date: new Date(d).toISOString(), type: t as ExerciseType, reps: parseInt(r), weight: w ? parseFloat(w) : undefined, owner_id: user?.id });
+            let reps = parseFloat(r);
+            let weight = w ? parseFloat(w) : undefined;
+
+            // CONVERT IMPORT -> STORAGE (METRIC)
+            if (isImperialContext) {
+               if (weight) weight = toStorageWeight(weight);
+               if (isDistanceExercise(t)) reps = toStorageDistance(reps);
+            }
+
+            newLogs.push({ 
+              id: generateId(), 
+              date: new Date(d).toISOString(), 
+              type: t as ExerciseType, 
+              reps, 
+              weight, 
+              owner_id: user?.id 
+            });
           }
         });
         setLogs(prev => [...newLogs, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        activateExercisesFromLogs(newLogs);
         showToast(`✓ Imported ${newLogs.length} logs!`);
         if (user && supabase && navigator.onLine) setTimeout(() => syncWithCloud(true), 500);
       } catch { showToast("Import failed"); }
     };
     reader.readAsText(file);
+  };
+
+  const handleGenerateDemoData = () => {
+    if (logs.length > 0) return;
+    
+    const demoLogs = generateDemoData();
+    // Assign owner_id if user is logged in
+    if (user) {
+      demoLogs.forEach(l => l.owner_id = user.id);
+    }
+    
+    setLogs(demoLogs);
+    activateExercisesFromLogs(demoLogs);
+    showToast(`Generated ${demoLogs.length} demo entries!`);
+    
+    if (user && supabase && navigator.onLine) {
+        setTimeout(() => syncWithCloud(true), 500);
+    }
   };
 
   const handleSecurityToggle = async () => {
@@ -291,60 +445,25 @@ const App: React.FC = () => {
     }
   };
 
-  const filteredStats = useMemo(() => {
-    const now = new Date();
-    return EXERCISES.map(ex => ({ ...ex, totalReps: logs.filter(l => {
-      if (l.type !== ex.id) return false;
-      const d = new Date(l.date);
-      if (totalsTimeFrame === 'daily') return d.toDateString() === now.toDateString();
-      if (totalsTimeFrame === 'weekly') { const w = new Date(); w.setDate(now.getDate() - 7); return d >= w; }
-      if (totalsTimeFrame === 'monthly') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      return d.getFullYear() === now.getFullYear();
-    }).reduce((a, c) => a + c.reps, 0) }));
-  }, [logs, totalsTimeFrame]);
+  const activeExercises = useMemo(() => {
+    return EXERCISES.filter(ex => activeExerciseIds.includes(ex.id));
+  }, [activeExerciseIds]);
 
-  const maxStats = useMemo(() => EXERCISES.map(ex => {
+  const maxStats = useMemo(() => activeExercises.map(ex => {
     const exLogs = logs.filter(l => l.type === ex.id);
     let mr = 0, mrd, mw = 0, mwd;
     exLogs.forEach(l => { if (l.reps > mr) { mr = l.reps; mrd = l.date; } if (l.weight && l.weight > mw) { mw = l.weight; mwd = l.date; } });
     return { ...ex, maxRep: mr, maxRepDate: mrd, maxWeight: mw, maxWeightDate: mwd };
-  }), [logs]);
+  }), [logs, activeExercises]);
 
   const historyLogs = useMemo(() => {
     if (!viewingHistory) return [];
-    const now = new Date();
-    return logs.filter(l => {
-      if (l.type !== viewingHistory) return false;
-      const d = new Date(l.date);
-      if (totalsTimeFrame === 'daily') return d.toDateString() === now.toDateString();
-      if (totalsTimeFrame === 'weekly') { const w = new Date(); w.setDate(now.getDate() - 7); return d >= w; }
-      if (totalsTimeFrame === 'monthly') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      return d.getFullYear() === now.getFullYear();
-    });
-  }, [logs, viewingHistory, totalsTimeFrame]);
+    return logs.filter(l => l.type === viewingHistory);
+  }, [logs, viewingHistory]);
 
   if (appState === 'loading') return <div className="h-[100dvh] bg-slate-50 flex items-center justify-center"><div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>;
   if (appState === 'locked' || appState === 'confirmingPinForBio') return <PinLockScreen isCreating={false} onPinEnter={async pin => { if (await secureStore.verify(pin)) setAppState('unlocked'); else setPinError("Invalid PIN"); }} onReset={() => setAppState('onboarding')} error={pinError} showBiometrics={hasBiometrics} onBiometricAuth={async () => { const p = await secureStore.getBiometricPin(); if (p) setAppState('unlocked'); }} />;
-  if (appState === 'creatingPin') return (
-    <PinLockScreen 
-      isCreating={true} 
-      onPinCreate={async p => { 
-        await secureStore.set(p, null);
-        if (window.PublicKeyCredential) {
-          try {
-            const success = await secureStore.enableBiometrics(p);
-            if (success) showToast("Biometrics enabled!");
-          } catch (e) {
-            console.warn("Biometric enroll skipped/failed", e);
-          }
-        }
-        await updateHasBio();
-        setAppState('unlocked'); 
-      }} 
-      onReset={() => setAppState('unlocked')} 
-      error={null} 
-    />
-  );
+  if (appState === 'creatingPin') return <PinLockScreen isCreating={true} onPinCreate={async p => { await secureStore.set(p, null); if (window.PublicKeyCredential) { try { const success = await secureStore.enableBiometrics(p); if (success) showToast("Biometrics enabled!"); } catch (e) { console.warn("Biometric enroll skipped", e); } } await updateHasBio(); setAppState('unlocked'); }} onReset={() => setAppState('unlocked')} error={null} />;
   
   if (appState === 'onboarding') return (
     <div className="fixed inset-0 bg-indigo-600 z-50 p-8 flex flex-col items-center justify-center text-white text-center">
@@ -353,84 +472,25 @@ const App: React.FC = () => {
         <h1 className="text-3xl font-black">FitTrack Pro</h1>
         <p className="text-indigo-200 text-sm mt-2 font-medium">Your progress, everywhere.</p>
       </div>
-
       {onboardingStep === 'welcome' && (
         <div className="w-full max-w-xs space-y-4">
           <button onClick={() => setOnboardingStep('email')} className="w-full bg-white text-indigo-600 py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-xl shadow-indigo-800/20 active:scale-95 transition-all">Sign In with Email</button>
           <button onClick={() => { localStorage.setItem('fit_skip_auth', 'true'); setAppState('unlocked'); }} className="text-indigo-200 text-xs font-bold uppercase tracking-widest py-2">Continue as Guest</button>
         </div>
       )}
-
       {onboardingStep === 'email' && (
         <form onSubmit={handleSendCode} className="w-full max-w-xs space-y-4">
-          <div className="space-y-1">
-            <input 
-              type="email" 
-              required
-              placeholder="Enter your email" 
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              disabled={isAuthLoading}
-              className="w-full p-4 rounded-xl bg-white/10 text-white border border-white/20 outline-none focus:bg-white/20 focus:border-white/40 transition-all placeholder:text-white/40 text-center" 
-            />
-          </div>
-          <button 
-            type="submit" 
-            disabled={isAuthLoading || !email}
-            className="w-full bg-white text-indigo-600 py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all disabled:opacity-50"
-          >
-            {isAuthLoading ? "Sending..." : "Send Code"}
-          </button>
-          <button 
-            type="button"
-            onClick={() => setOnboardingStep('welcome')}
-            className="text-indigo-200 text-xs font-bold uppercase tracking-widest py-2"
-          >
-            Back
-          </button>
+          <input type="email" required placeholder="Enter your email" value={email} onChange={e => setEmail(e.target.value)} disabled={isAuthLoading} className="w-full p-4 rounded-xl bg-white/10 text-white border border-white/20 outline-none focus:bg-white/20 text-center" />
+          <button type="submit" disabled={isAuthLoading || !email} className="w-full bg-white text-indigo-600 py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all disabled:opacity-50">{isAuthLoading ? "Sending..." : "Send Code"}</button>
+          <button type="button" onClick={() => setOnboardingStep('welcome')} className="text-indigo-200 text-xs font-bold uppercase tracking-widest py-2">Back</button>
         </form>
       )}
-
       {onboardingStep === 'otp' && (
         <form onSubmit={handleVerifyCode} className="w-full max-w-xs space-y-4">
           <p className="text-xs text-indigo-100 mb-2">Verification code sent to<br/><span className="font-bold">{email}</span></p>
-          <div className="space-y-1">
-            <input 
-              type="text" 
-              required
-              inputMode="numeric"
-              placeholder="6-digit code" 
-              value={otpCode}
-              onChange={e => setOtpCode(e.target.value)}
-              disabled={isAuthLoading}
-              maxLength={6}
-              className="w-full p-4 rounded-xl bg-white/10 text-white border border-white/20 outline-none focus:bg-white/20 focus:border-white/40 transition-all placeholder:text-white/40 text-center text-2xl tracking-[0.5em] font-black" 
-            />
-          </div>
-          <button 
-            type="submit" 
-            disabled={isAuthLoading || otpCode.length < 6}
-            className="w-full bg-white text-indigo-600 py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all disabled:opacity-50"
-          >
-            {isAuthLoading ? "Verifying..." : "Verify & Continue"}
-          </button>
-          <div className="flex flex-col gap-2">
-            <button 
-              type="button"
-              onClick={handleSendCode}
-              disabled={isAuthLoading}
-              className="text-indigo-200 text-[10px] font-black uppercase tracking-widest"
-            >
-              Resend Code
-            </button>
-            <button 
-              type="button"
-              onClick={() => setOnboardingStep('email')}
-              className="text-indigo-200 text-xs font-bold uppercase tracking-widest py-2"
-            >
-              Change Email
-            </button>
-          </div>
+          <input type="text" required inputMode="numeric" placeholder="6-digit code" value={otpCode} onChange={e => setOtpCode(e.target.value)} disabled={isAuthLoading} maxLength={6} className="w-full p-4 rounded-xl bg-white/10 text-white border border-white/20 outline-none focus:bg-white/20 text-center text-2xl tracking-[0.5em] font-black" />
+          <button type="submit" disabled={isAuthLoading || otpCode.length < 6} className="w-full bg-white text-indigo-600 py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all disabled:opacity-50">{isAuthLoading ? "Verifying..." : "Verify & Continue"}</button>
+          <button type="button" onClick={handleSendCode} disabled={isAuthLoading} className="text-indigo-200 text-[10px] font-black uppercase tracking-widest">Resend Code</button>
         </form>
       )}
     </div>
@@ -438,59 +498,19 @@ const App: React.FC = () => {
 
   return (
     <>
-      {viewingHistory ? (
-        <HistoryView viewingHistory={viewingHistory} onClose={() => setViewingHistory(null)} totalsTimeFrame={totalsTimeFrame} historyLogs={historyLogs} onDeleteLog={setLogToDelete} />
+      {showExerciseManager ? (
+        <ExerciseManager activeIds={activeExerciseIds} onToggle={toggleExercise} onUpdate={handleUpdateActiveExercises} onClose={() => setShowExerciseManager(false)} />
+      ) : viewingHistory ? (
+        <HistoryView unitSystem={unitSystem} viewingHistory={viewingHistory} onClose={() => setViewingHistory(null)} totalsTimeFrame="weekly" historyLogs={historyLogs} onDeleteLog={setLogToDelete} />
       ) : (
         <Layout activeTab={activeTab} setActiveTab={setActiveTab} syncStatus={syncStatus} onSyncClick={() => syncWithCloud()}>
-          {activeTab === 'dashboard' && <DashboardView logs={logs} totalsTimeFrame={totalsTimeFrame} setTotalsTimeFrame={setTotalsTimeFrame} filteredStats={filteredStats} maxStats={maxStats} setViewingHistory={setViewingHistory} />}
-          {activeTab === 'add' && <AddLogView newEntry={newEntry} setNewEntry={setNewEntry} entryDate={entryDate} handleDateChange={e => setEntryDate(new Date(e.target.value))} handleAddLog={handleAddLog} />}
-          {activeTab === 'settings' && <SettingsView user={user} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={handleSecurityToggle} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onAuthAction={() => { 
-            if (user) { 
-              if (logoutConfirm) handleLogout(); 
-              else setLogoutConfirm(true); 
-            } else { 
-              setAppState('onboarding'); 
-              setOnboardingStep('email'); 
-            } 
-          }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} hasLocalData={logs.length > 0} />}
+          {activeTab === 'dashboard' && <DashboardView unitSystem={unitSystem} logs={logs} activeExercises={activeExercises} maxStats={maxStats} setViewingHistory={setViewingHistory} />}
+          {activeTab === 'add' && <AddLogView unitSystem={unitSystem} activeExercises={activeExercises} newEntry={newEntry} setNewEntry={setNewEntry} entryDate={entryDate} handleDateChange={e => setEntryDate(new Date(e.target.value))} handleAddLog={handleAddLog} />}
+          {activeTab === 'settings' && <SettingsView unitSystem={unitSystem} onUnitSystemChange={setUnitSystem} user={user} syncStatus={syncStatus} onSyncManual={() => syncWithCloud()} onImportClick={() => fileInputRef.current?.click()} onExportCSV={handleExportCSV} onClearDataTrigger={() => setShowClearDataConfirm(true)} onDeleteAccountTrigger={() => setShowDeleteAccountConfirm(true)} hasBiometrics={hasBiometrics} onSecurityToggle={handleSecurityToggle} onChangePin={() => setAppState('creatingPin')} onPrivacyClick={() => setShowPrivacyDialog(true)} onManageExercises={() => setShowExerciseManager(true)} onAuthAction={() => { if (user) { if (logoutConfirm) handleLogout(); else setLogoutConfirm(true); } else { setAppState('onboarding'); setOnboardingStep('email'); } }} isLoggingOut={isLoggingOut} logoutConfirm={logoutConfirm} appVersion={APP_VERSION} hasLocalData={logs.length > 0} onGenerateDemoData={handleGenerateDemoData} />}
         </Layout>
       )}
       <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" />
-      <AppDialogs 
-        isCloudEnabled={!!user}
-        syncError={syncError} 
-        showSyncErrorDialog={showSyncErrorDialog} 
-        onSyncErrorClose={() => setShowSyncErrorDialog(false)} 
-        onSyncRetry={() => syncWithCloud()} 
-        showCloudWipeDialog={showCloudWipeDialog} 
-        onCloudKeepLocal={() => { setShowCloudWipeDialog(false); syncWithCloud(true); showToast("Uploading local data..."); }} 
-        onCloudOverwriteLocal={() => { setLogs([]); setShowCloudWipeDialog(false); }} 
-        showClearDataConfirm={showClearDataConfirm} 
-        onClearDataCancel={() => setShowClearDataConfirm(false)} 
-        onClearDataConfirm={async () => { 
-          if (user && supabase && navigator.onLine) {
-            try {
-              const { error } = await supabase.from('workouts').delete().eq('owner_id', user.id);
-              if (error) throw error;
-            } catch (err) {
-              showToast("Error clearing cloud data");
-              setShowClearDataConfirm(false);
-              return;
-            }
-          }
-          setLogs([]); 
-          setShowClearDataConfirm(false);
-          showToast("All data deleted.");
-        }} 
-        logToDelete={logToDelete} 
-        onDeleteLogCancel={() => setLogToDelete(null)} 
-        onDeleteLogConfirm={() => { setLogs(prev => prev.filter(l => l.id !== logToDelete)); setLogToDelete(null); }} 
-        showDeleteAccountConfirm={showDeleteAccountConfirm} 
-        onDeleteAccountCancel={() => setShowDeleteAccountConfirm(false)} 
-        onDeleteAccountConfirm={handleDeleteAccount} 
-        showPrivacyDialog={showPrivacyDialog} 
-        onPrivacyClose={() => setShowPrivacyDialog(false)} 
-      />
+      <AppDialogs isCloudEnabled={!!user} syncError={syncError} showSyncErrorDialog={showSyncErrorDialog} onSyncErrorClose={() => setShowSyncErrorDialog(false)} onSyncRetry={() => syncWithCloud()} showCloudWipeDialog={showCloudWipeDialog} onCloudKeepLocal={() => { setShowCloudWipeDialog(false); syncWithCloud(true); showToast("Uploading local data..."); }} onCloudOverwriteLocal={() => { setLogs([]); setShowCloudWipeDialog(false); }} showClearDataConfirm={showClearDataConfirm} onClearDataCancel={() => setShowClearDataConfirm(false)} onClearDataConfirm={async () => { if (user && supabase && navigator.onLine) { try { await supabase.from('workouts').delete().eq('owner_id', user.id); } catch { showToast("Error clearing cloud"); setShowClearDataConfirm(false); return; } } setLogs([]); setShowClearDataConfirm(false); showToast("All data deleted."); }} logToDelete={logToDelete} onDeleteLogCancel={() => setLogToDelete(null)} onDeleteLogConfirm={() => { setLogs(prev => prev.filter(l => l.id !== logToDelete)); setLogToDelete(null); }} showDeleteAccountConfirm={showDeleteAccountConfirm} onDeleteAccountCancel={() => setShowDeleteAccountConfirm(false)} onDeleteAccountConfirm={handleDeleteAccount} showPrivacyDialog={showPrivacyDialog} onPrivacyClose={() => setShowPrivacyDialog(false)} />
       {toastMessage && <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl font-bold toast-animate text-white bg-slate-900 border border-slate-700/50 backdrop-blur-md">{toastMessage}</div>}
     </>
   );

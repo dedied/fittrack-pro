@@ -1,23 +1,40 @@
+
 import React from 'react';
-import { EXERCISES, ExerciseType } from '../types';
+import { ExerciseType, ExerciseDefinition, UnitSystem } from '../types';
 import { toDateTimeLocal, formatNiceDate } from '../utils/dateUtils';
+import { getUnitLabel, getWeightUnit } from '../utils/units';
 
 interface AddLogViewProps {
+  activeExercises: ExerciseDefinition[];
   newEntry: { type: ExerciseType; reps: string; weight: string };
   setNewEntry: React.Dispatch<React.SetStateAction<{ type: ExerciseType; reps: string; weight: string }>>;
   entryDate: Date;
   handleDateChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleAddLog: (e?: React.FormEvent) => void;
+  unitSystem: UnitSystem;
 }
 
 const AddLogView: React.FC<AddLogViewProps> = ({
+  activeExercises,
   newEntry,
   setNewEntry,
   entryDate,
   handleDateChange,
-  handleAddLog
+  handleAddLog,
+  unitSystem
 }) => {
-  const currentEx = EXERCISES.find(e => e.id === newEntry.type);
+  const currentEx = activeExercises.find(e => e.id === newEntry.type) || activeExercises[0];
+
+  // If the current newEntry.type isn't in activeExercises (because user removed it), default to first active
+  React.useEffect(() => {
+     if (!activeExercises.find(e => e.id === newEntry.type) && activeExercises.length > 0) {
+        setNewEntry(prev => ({ ...prev, type: activeExercises[0].id }));
+     }
+  }, [activeExercises, newEntry.type, setNewEntry]);
+
+  // Determine dynamic labels based on exercise type and unit system
+  const repLabel = currentEx ? getUnitLabel(currentEx.id, unitSystem) : 'Reps';
+  const weightLabel = getWeightUnit(unitSystem);
 
   return (
     <div className="h-full flex flex-col justify-center items-center py-6">
@@ -27,19 +44,25 @@ const AddLogView: React.FC<AddLogViewProps> = ({
            <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-2">What did you crush today?</p>
          </div>
 
-         <div className="grid grid-cols-3 gap-4 mb-8">
-           {EXERCISES.map(ex => {
-             const isSelected = newEntry.type === ex.id;
-             return (
-               <button
-                 key={ex.id}
-                 onClick={() => setNewEntry({ ...newEntry, type: ex.id })}
-                 className={`flex flex-col items-center justify-center p-6 rounded-[2rem] transition-all border-2 ${isSelected ? 'border-indigo-600 bg-indigo-50 shadow-inner' : 'border-transparent bg-slate-50 hover:bg-slate-100'}`}
-               >
-                 <div className={`text-3xl transition-transform ${isSelected ? 'scale-125' : 'grayscale opacity-50'}`}>{ex.icon}</div>
-               </button>
-             );
-           })}
+         {/* Scrollable grid for exercises if many, otherwise just a grid */}
+         <div className="max-h-64 overflow-y-auto custom-scrollbar mb-8 -mx-2 px-2">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
+              {activeExercises.map(ex => {
+                const isSelected = newEntry.type === ex.id;
+                return (
+                  <button
+                    key={ex.id}
+                    onClick={() => setNewEntry({ ...newEntry, type: ex.id })}
+                    className={`flex flex-col items-center justify-center p-4 rounded-[2rem] transition-all border-2 aspect-square ${isSelected ? 'border-indigo-600 bg-indigo-50 shadow-inner' : 'border-transparent bg-slate-50 hover:bg-slate-100'}`}
+                  >
+                    <div className={`text-2xl transition-transform ${isSelected ? 'scale-125' : 'grayscale opacity-50'}`}>{ex.icon}</div>
+                    <span className={`text-[9px] font-bold mt-2 uppercase tracking-tight text-center leading-none ${isSelected ? 'text-indigo-900' : 'text-slate-400'}`}>
+                      {ex.label.split(' ')[0]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
          </div>
          
          <div className="text-center mb-10">
@@ -67,10 +90,10 @@ const AddLogView: React.FC<AddLogViewProps> = ({
 
              <div className="flex gap-4">
                 <div className="relative flex-1">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest absolute -top-2 left-6 bg-white px-2 z-10">Reps</label>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest absolute -top-2 left-6 bg-white px-2 z-10">{repLabel}</label>
                    <input 
                      type="number" 
-                     inputMode="numeric" 
+                     inputMode="decimal"
                      pattern="[0-9]*"
                      placeholder="0" 
                      value={newEntry.reps} 
@@ -81,7 +104,7 @@ const AddLogView: React.FC<AddLogViewProps> = ({
                 </div>
                 {currentEx?.isWeighted && (
                    <div className="relative flex-1 animate-fade-in">
-                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest absolute -top-2 left-6 bg-white px-2 z-10">Kg</label>
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest absolute -top-2 left-6 bg-white px-2 z-10">{weightLabel}</label>
                      <input 
                        type="number" 
                        inputMode="decimal" 

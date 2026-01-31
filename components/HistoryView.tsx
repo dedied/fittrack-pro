@@ -1,6 +1,8 @@
+
 import React from 'react';
-import { WorkoutLog, EXERCISES, ExerciseType } from '../types';
+import { WorkoutLog, EXERCISES, ExerciseType, UnitSystem } from '../types';
 import { TimeFrame } from '../App';
+import { toDisplayDistance, toDisplayWeight, isDistanceExercise, getUnitLabel, getWeightUnit } from '../utils/units';
 
 interface HistoryViewProps {
   viewingHistory: ExerciseType;
@@ -8,6 +10,7 @@ interface HistoryViewProps {
   totalsTimeFrame: TimeFrame;
   historyLogs: WorkoutLog[];
   onDeleteLog: (id: string) => void;
+  unitSystem: UnitSystem;
 }
 
 const HistoryView: React.FC<HistoryViewProps> = ({
@@ -15,7 +18,8 @@ const HistoryView: React.FC<HistoryViewProps> = ({
   onClose,
   totalsTimeFrame,
   historyLogs,
-  onDeleteLog
+  onDeleteLog,
+  unitSystem
 }) => {
   const exerciseDef = EXERCISES.find(e => e.id === viewingHistory);
 
@@ -34,26 +38,42 @@ const HistoryView: React.FC<HistoryViewProps> = ({
         {historyLogs.length === 0 ? (
           <div className="text-center text-slate-400 py-10">No logs found for this period.</div>
         ) : (
-          historyLogs.map(log => (
-            <div key={log.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                  <div>
-                     <p className="text-sm font-bold text-slate-800">{new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</p>
-                     <p className="text-[10px] text-slate-400 font-bold">{new Date(log.date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</p>
-                  </div>
-                  <div className="text-right">
-                     <p className="text-lg font-black text-indigo-600">{log.reps} <span className="text-[10px] text-slate-400 font-bold uppercase">Reps</span></p>
-                     {log.weight && <p className="text-xs font-bold text-emerald-600">{log.weight}kg</p>}
-                  </div>
+          historyLogs.map(log => {
+            const displayReps = isDistanceExercise(log.type) 
+               ? toDisplayDistance(log.reps, unitSystem) 
+               : log.reps;
+            
+            const displayWeight = log.weight 
+               ? toDisplayWeight(log.weight, unitSystem) 
+               : undefined;
+
+            return (
+              <div key={log.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                    <div>
+                       <p className="text-sm font-bold text-slate-800">{new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                       <p className="text-[10px] text-slate-400 font-bold">{new Date(log.date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                    <div className="text-right">
+                       <p className="text-lg font-black text-indigo-600">
+                         {displayReps} <span className="text-[10px] text-slate-400 font-bold uppercase">{getUnitLabel(log.type, unitSystem)}</span>
+                       </p>
+                       {displayWeight && (
+                         <p className="text-xs font-bold text-emerald-600">
+                           {displayWeight}{getWeightUnit(unitSystem)}
+                         </p>
+                       )}
+                    </div>
+                </div>
+                <div className="flex justify-end pt-2 border-t border-slate-50">
+                    <button onClick={() => onDeleteLog(log.id)} className="text-red-500 text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                       <span>Remove</span>
+                    </button>
+                </div>
               </div>
-              <div className="flex justify-end pt-2 border-t border-slate-50">
-                  <button onClick={() => onDeleteLog(log.id)} className="text-red-500 text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full flex items-center gap-1.5">
-                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                     <span>Remove</span>
-                  </button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

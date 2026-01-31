@@ -1,5 +1,7 @@
+
 import React from 'react';
 import PwaInstallButton from './PwaInstallButton';
+import { UnitSystem } from '../types';
 
 interface SettingsViewProps {
   user: any;
@@ -13,18 +15,22 @@ interface SettingsViewProps {
   onSecurityToggle: () => void;
   onChangePin: () => void;
   onPrivacyClick: () => void;
+  onManageExercises: () => void;
   onAuthAction: () => void;
   isLoggingOut: boolean;
   logoutConfirm: boolean;
   appVersion: string;
   hasLocalData: boolean;
+  unitSystem: UnitSystem;
+  onUnitSystemChange: (val: UnitSystem) => void;
+  onGenerateDemoData?: () => void;
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({
   user, syncStatus, onSyncManual, onImportClick,
   onExportCSV, onClearDataTrigger, onDeleteAccountTrigger, hasBiometrics,
-  onSecurityToggle, onChangePin, onPrivacyClick, onAuthAction, isLoggingOut,
-  logoutConfirm, appVersion, hasLocalData
+  onSecurityToggle, onChangePin, onPrivacyClick, onManageExercises, onAuthAction, isLoggingOut,
+  logoutConfirm, appVersion, hasLocalData, unitSystem, onUnitSystemChange, onGenerateDemoData
 }) => {
   return (
     <div className="max-w-2xl mx-auto space-y-8 py-6">
@@ -32,6 +38,49 @@ const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* PWA Section */}
       <PwaInstallButton />
+
+      {/* Personalization Section */}
+      <section>
+        <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest ml-6 mb-4">Personalization</h3>
+        <div className="bg-white rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-xl shadow-slate-200/40 divide-y divide-slate-50">
+           
+           {/* Unit System Toggle */}
+           <div className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+              <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-xl text-blue-500">📏</div>
+              <div className="text-left flex-1">
+                  <p className="font-bold text-slate-800">Unit System</p>
+                  <p className="text-[11px] font-medium text-slate-400">
+                    {unitSystem === 'metric' ? 'Metric (kg, km)' : 'Imperial (lbs, miles)'}
+                  </p>
+              </div>
+              <div className="flex bg-slate-100 rounded-lg p-1">
+                <button 
+                  onClick={() => onUnitSystemChange('metric')}
+                  className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${unitSystem === 'metric' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}
+                >
+                  Metric
+                </button>
+                <button 
+                  onClick={() => onUnitSystemChange('imperial')}
+                  className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${unitSystem === 'imperial' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}
+                >
+                  Imperial
+                </button>
+              </div>
+           </div>
+
+           <button onClick={onManageExercises} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 transition-colors group">
+              <div className="w-12 h-12 rounded-xl bg-slate-100 group-hover:bg-indigo-50 flex items-center justify-center text-2xl transition-colors">✨</div>
+              <div className="text-left flex-1">
+                  <p className="font-bold text-slate-800">Manage Exercises</p>
+                  <p className="text-[11px] font-medium text-slate-400">Choose which activities to track</p>
+              </div>
+              <div className="text-slate-300">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+           </button>
+        </div>
+      </section>
 
       {/* Data Management Section */}
       <section>
@@ -61,6 +110,21 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl shadow-sm shadow-indigo-100/50">🔄</div>
                   <div className="text-left flex-1 font-bold text-slate-700">Manual Sync Now</div>
               </button>
+              
+              {onGenerateDemoData && (
+                <button 
+                  onClick={onGenerateDemoData} 
+                  disabled={hasLocalData} 
+                  className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 transition-colors disabled:opacity-30 disabled:hover:bg-white group"
+                >
+                    <div className="w-10 h-10 rounded-xl bg-purple-50 group-hover:bg-purple-100 flex items-center justify-center text-xl text-purple-600 transition-colors">🧪</div>
+                    <div className="text-left flex-1">
+                        <p className="font-bold text-slate-700">Generate Demo Data</p>
+                        <p className="text-[10px] text-slate-400">Populate 2 years of fake history</p>
+                    </div>
+                </button>
+              )}
+
               <button onClick={onImportClick} className="w-full p-6 flex items-center gap-4 hover:bg-slate-50 transition-colors">
                   <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-xl">📥</div>
                   <div className="text-left flex-1 font-bold text-slate-700">Restore from CSV</div>

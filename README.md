@@ -43,7 +43,8 @@ CREATE TABLE public.workouts (
   id TEXT PRIMARY KEY,
   date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   type TEXT NOT NULL,
-  reps INTEGER NOT NULL,
+  -- We use FLOAT for reps to support distance-based exercises (e.g., 5.5 km)
+  reps FLOAT NOT NULL,
   weight FLOAT,
   owner_id UUID NOT NULL
     REFERENCES auth.users(id) ON DELETE CASCADE
